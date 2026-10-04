@@ -1,53 +1,62 @@
 """
-Hand Landmark Tracker & Pseudo-Action Extractor
-Extracts 3D hand keypoints from egocentric phone videos using MediaPipe Hands
-and computes relative wrist displacements and pinch gestures.
+Hand Landmark Tracker & Action Extractor (MediaPipe Tasks API)
+Extracts 3D hand keypoints from real egocentric phone videos,
+computes 3D wrist displacements, and determines gripper grasp/lift actions.
 """
 
 import os
 import cv2
-import json
 import argparse
+import urllib.request
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-try:
-    import mediapipe as mp
-    MEDIAPIPE_AVAILABLE = True
-except ImportError:
-    MEDIAPIPE_AVAILABLE = False
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+DEFAULT_MODEL_PATH = "models/hand_landmarker.task"
+
+
+def ensure_model_exists(model_path: str = DEFAULT_MODEL_PATH):
+    """Downloads the official MediaPipe hand landmarker model if missing."""
+    p = Path(model_path)
+    if not p.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        print(f"[*] Downloading MediaPipe HandLandmarker model to {model_path}...")
+        urllib.request.urlretrieve(MODEL_URL, str(p))
+        print("[+] Download complete.")
 
 
 class HandTrajectoryExtractor:
     """
-    Processes video frames to extract hand 3D landmarks,
-    wrist deltas (dx, dy, dz), and normalized pinch metrics.
+    Extracts 3D hand landmarks, wrist deltas, and pinch/grasp state
+    using MediaPipe Tasks API.
     """
 
     def __init__(
         self,
-        min_detection_confidence: float = 0.7,
-        min_tracking_confidence: float = 0.6,
-        pinch_threshold: float = 0.06,
+        model_path: str = DEFAULT_MODEL_PATH,
+        grasp_threshold: float = 0.24,
         target_size: Tuple[int, int] = (256, 256),
     ):
-        self.pinch_threshold = pinch_threshold
+        ensure_model_exists(model_path)
+        self.model_path = model_path
+        self.grasp_threshold = grasp_threshold
         self.target_size = target_size
 
-        if not MEDIAPIPE_AVAILABLE:
-            print("[Warning] MediaPipe is not installed. Run 'pip install mediapipe'.")
-            self.mp_hands = None
-            self.hands = None
-        else:
-            self.mp_hands = mp.solutions.hands
-            self.hands = self.mp_hands.Hands(
-                static_image_mode=False,
-                max_num_hands=1,
-                min_detection_confidence=min_detection_confidence,
-                min_tracking_confidence=min_tracking_confidence,
-            )
-            self.mp_draw = mp.solutions.drawing_utils
+    def _create_landmarker(self):
+        base_options = python.BaseOptions(model_asset_path=self.model_path)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=0.4,
+            min_tracking_confidence=0.4,
+        )
+        return vision.HandLandmarker.create_from_options(options)
 
     def process_video(
         self,
@@ -55,9 +64,6 @@ class HandTrajectoryExtractor:
         output_dir: str,
         save_annotated_video: bool = True,
     ) -> Optional[Dict[str, np.ndarray]]:
-        """
-        Extracts trajectory from a single video file.
-        """
         video_path = Path(video_path)
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -72,6 +78,7 @@ class HandTrajectoryExtractor:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         print(f"[*] Processing {video_path.name}: {total_frames} frames @ {fps:.1f} FPS ({width}x{height})")
+        landmarker = self._create_landmarker()
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -84,6 +91,18 @@ class HandTrajectoryExtractor:
                 str(annotated_video_path), fourcc, fps, self.target_size
             )
 
+        # Region of interest crop:
+        # In a portrait video (576 x 1024), the table and glass are typically located
+        # in the middle-to-lower portion (y from 300 to 900).
+        crop_size = min(width, height)
+        if height > width:
+            # Shift crop window downward toward the table surface
+            y_offset = int((height - crop_size) * 0.65)
+            x_offset = (width - crop_size) // 2
+        else:
+            y_offset = (height - crop_size) // 2
+            x_offset = (width - crop_size) // 2
+
         frames_rgb = []
         wrist_positions = []
         pinch_distances = []
@@ -91,75 +110,84 @@ class HandTrajectoryExtractor:
         raw_landmarks_all = []
         timestamps = []
 
-        frame_idx = 0
-        last_wrist = None
+        last_valid_wrist = None
+        last_valid_dist = 0.4
+        detected_indices = []
 
-        while True:
+        for frame_idx in range(total_frames):
             ret, frame = cap.read()
             if not ret:
                 break
 
-            # Center-crop to square then resize to target_size
-            h, w, _ = frame.shape
-            min_dim = min(h, w)
-            top = (h - min_dim) // 2
-            left = (w - min_dim) // 2
-            cropped = frame[top : top + min_dim, left : left + min_dim]
+            # Crop square ROI centered on workspace
+            cropped = frame[y_offset : y_offset + crop_size, x_offset : x_offset + crop_size]
             resized = cv2.resize(cropped, self.target_size)
             rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
             t = frame_idx / fps
             timestamps.append(t)
 
-            wrist_pos = np.zeros(3, dtype=np.float32)
-            pinch_dist = 0.1
-            gripper_cmd = -1.0  # -1 is open, +1 is closed
-            landmarks_21 = np.zeros((21, 3), dtype=np.float32)
+            # Convert to MediaPipe Image
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            timestamp_ms = int(frame_idx * 1000 / fps)
 
-            if self.hands is not None:
-                results = self.hands.process(rgb_frame)
-                if results.multi_hand_landmarks:
-                    hand_landmarks = results.multi_hand_landmarks[0]
+            detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
-                    for idx, lm in enumerate(hand_landmarks.landmark):
-                        landmarks_21[idx] = [lm.x, lm.y, lm.z]
+            wrist_pos = None
+            pinch_dist = last_valid_dist
+            lms_21 = np.zeros((21, 3), dtype=np.float32)
 
-                    # Wrist landmark is index 0
-                    wrist_pos = landmarks_21[0].copy()
+            if detection_result.hand_landmarks:
+                detected_indices.append(frame_idx)
+                lms = detection_result.hand_landmarks[0]
+                for idx, lm in enumerate(lms):
+                    lms_21[idx] = [lm.x, lm.y, lm.z]
 
-                    # Thumb tip is 4, Index tip is 8
-                    thumb_tip = landmarks_21[4]
-                    index_tip = landmarks_21[8]
-                    pinch_dist = float(np.linalg.norm(thumb_tip - index_tip))
+                wrist_pos = lms_21[0].copy()
+                last_valid_wrist = wrist_pos.copy()
 
-                    # Discrete or smooth gripper command
-                    gripper_cmd = 1.0 if pinch_dist < self.pinch_threshold else -1.0
+                # Thumb tip = 4, Index tip = 8, Middle tip = 12
+                thumb_tip = lms_21[4]
+                index_tip = lms_21[8]
+                pinch_dist = float(np.linalg.norm(thumb_tip - index_tip))
+                last_valid_dist = pinch_dist
 
-                    if save_annotated_video and annotated_writer:
-                        vis_bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
-                        self.mp_draw.draw_landmarks(
-                            vis_bgr, hand_landmarks, self.mp_hands.HAND_CONNECTIONS
-                        )
-                        label = f"GRIPPER: {'CLOSED' if gripper_cmd > 0 else 'OPEN'} (dist: {pinch_dist:.3f})"
-                        color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
-                        cv2.putText(vis_bgr, label, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                        annotated_writer.write(vis_bgr)
-                else:
-                    # Maintain last known position if lost for 1 frame
-                    if last_wrist is not None:
-                        wrist_pos = last_wrist.copy()
-                    if save_annotated_video and annotated_writer:
-                        vis_bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
-                        annotated_writer.write(vis_bgr)
+            elif last_valid_wrist is not None:
+                # Retain last known position with decaying momentum
+                wrist_pos = last_valid_wrist.copy()
+            else:
+                # Hand not yet entered workspace
+                wrist_pos = np.array([0.5, 0.9, 0.0], dtype=np.float32)
+
+            # Grasp classification:
+            # When fingers close around the steel glass, pinch distance drops below threshold
+            gripper_cmd = 1.0 if pinch_dist < self.grasp_threshold else -1.0
+
+            if save_annotated_video and annotated_writer:
+                vis_bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+                if detection_result.hand_landmarks:
+                    # Draw keypoint dots
+                    for pt in lms_21:
+                        px, py = int(pt[0] * self.target_size[0]), int(pt[1] * self.target_size[1])
+                        cv2.circle(vis_bgr, (px, py), 3, (0, 255, 0), -1)
+
+                    # Highlight pinch line
+                    p_thumb = (int(lms_21[4, 0] * self.target_size[0]), int(lms_21[4, 1] * self.target_size[1]))
+                    p_index = (int(lms_21[8, 0] * self.target_size[0]), int(lms_21[8, 1] * self.target_size[1]))
+                    line_color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
+                    cv2.line(vis_bgr, p_thumb, p_index, line_color, 2)
+
+                status_text = f"GRIPPER: {'CLOSED (HOLDING GLASS)' if gripper_cmd > 0 else 'OPEN (REACHING)'}"
+                color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
+                cv2.putText(vis_bgr, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
+                cv2.putText(vis_bgr, f"Dist: {pinch_dist:.3f}", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                annotated_writer.write(vis_bgr)
 
             frames_rgb.append(rgb_frame)
             wrist_positions.append(wrist_pos)
             pinch_distances.append(pinch_dist)
             gripper_states.append(gripper_cmd)
-            raw_landmarks_all.append(landmarks_21)
-            last_wrist = wrist_pos
-
-            frame_idx += 1
+            raw_landmarks_all.append(lms_21)
 
         cap.release()
         if annotated_writer:
@@ -168,7 +196,7 @@ class HandTrajectoryExtractor:
         wrist_positions = np.array(wrist_positions, dtype=np.float32)
         gripper_states = np.array(gripper_states, dtype=np.float32)
 
-        # Compute wrist deltas: delta_pos[t] = pos[t] - pos[t-1]
+        # Compute wrist deltas: delta[t] = pos[t] - pos[t-1]
         wrist_deltas = np.zeros_like(wrist_positions)
         if len(wrist_positions) > 1:
             wrist_deltas[1:] = wrist_positions[1:] - wrist_positions[:-1]
@@ -182,32 +210,41 @@ class HandTrajectoryExtractor:
             "gripper_states": gripper_states,
             "landmarks_3d": np.array(raw_landmarks_all, dtype=np.float32),
             "fps": np.float32(fps),
+            "source_video": str(video_path),
         }
 
         save_file = output_path / f"{video_path.stem}_trajectory.npz"
         np.savez_compressed(save_file, **trajectory_data)
-        print(f"[+] Successfully extracted {frame_idx} steps -> {save_file}")
+        print(f"[+] Extracted {len(frames_rgb)} steps (Hand detected in {len(detected_indices)} frames) -> {save_file}")
         return trajectory_data
 
 
 def process_all_raw_videos(raw_dir: str, output_dir: str):
     """Batch processes all mp4/mov videos in raw_dir."""
     raw_path = Path(raw_dir)
-    videos = sorted(list(raw_path.glob("*.mp4")) + list(raw_path.glob("*.mov")))
-    if not videos:
-        print(f"[-] No .mp4 or .mov files found in {raw_dir}")
-        print("    Please follow 'src/video_processing/record_guidelines.md' to record videos.")
+    videos = sorted(list(raw_path.glob("Vid_*.mp4")) + list(raw_path.glob("demo_*.mp4")) + list(raw_path.glob("*.mp4")))
+    # Deduplicate
+    unique_videos = []
+    seen = set()
+    for v in videos:
+        if v.name not in seen and not v.name.endswith("_annotated.mp4") and not v.name.startswith("synthetic"):
+            seen.add(v.name)
+            unique_videos.append(v)
+
+    if not unique_videos:
+        print(f"[-] No raw video files found in {raw_dir}")
         return
 
+    print(f"[*] Found {len(unique_videos)} videos to process in {raw_dir}")
     extractor = HandTrajectoryExtractor()
-    for video in videos:
+    for video in unique_videos:
         extractor.process_video(str(video), output_dir)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract hand landmarks and actions from video")
     parser.add_argument("--video", type=str, default=None, help="Path to single video file")
-    parser.add_argument("--raw_dir", type=str, default="data/raw_videos", help="Directory of raw videos")
+    parser.add_argument("--raw_dir", type=str, default="media", help="Directory of raw videos")
     parser.add_argument("--output_dir", type=str, default="data/processed_trajectories", help="Output directory")
     args = parser.parse_args()
 

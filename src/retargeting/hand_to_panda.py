@@ -121,10 +121,26 @@ class HandToPandaRetargeter:
         return retargeted_dict
 
 
+def retarget_all_trajectories(dir_path: str = "data/processed_trajectories"):
+    p = Path(dir_path)
+    traj_files = sorted(list(p.glob("*_trajectory.npz")))
+    if not traj_files:
+        print(f"[-] No trajectory files found in {dir_path}")
+        return
+    print(f"[*] Found {len(traj_files)} trajectories to retarget in {dir_path}")
+    retargeter = HandToPandaRetargeter()
+    for f in traj_files:
+        retargeter.retarget_trajectory(str(f))
+
+
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
+        arg_path = Path(sys.argv[1])
         retargeter = HandToPandaRetargeter()
-        retargeter.retarget_trajectory(sys.argv[1])
+        if arg_path.is_dir():
+            retarget_all_trajectories(str(arg_path))
+        else:
+            retargeter.retarget_trajectory(str(arg_path))
     else:
-        print("Usage: python hand_to_panda.py <path_to_trajectory.npz>")
+        retarget_all_trajectories()
