@@ -91,18 +91,6 @@ class HandTrajectoryExtractor:
                 str(annotated_video_path), fourcc, fps, self.target_size
             )
 
-        # Region of interest crop:
-        # In a portrait video (576 x 1024), the table and glass are typically located
-        # in the middle-to-lower portion (y from 300 to 900).
-        crop_size = min(width, height)
-        if height > width:
-            # Shift crop window downward toward the table surface
-            y_offset = int((height - crop_size) * 0.65)
-            x_offset = (width - crop_size) // 2
-        else:
-            y_offset = (height - crop_size) // 2
-            x_offset = (width - crop_size) // 2
-
         frames_rgb = []
         wrist_positions = []
         pinch_distances = []
@@ -111,17 +99,32 @@ class HandTrajectoryExtractor:
         timestamps = []
 
         last_valid_wrist = None
-        last_valid_dist = 0.4
+        last_valid_dist = 0.35
+        last_valid_idx_tip = None
+        current_gripper_state = -1.0  # start OPEN
         detected_indices = []
+
+        close_threshold = 0.19
+        open_threshold = 0.26
+        jump_threshold = 0.12  # in normalized units
+
+        max_dim = max(width, height)
+        pad_top = (max_dim - height) // 2
+        pad_bottom = max_dim - height - pad_top
+        pad_left = (max_dim - width) // 2
+        pad_right = max_dim - width - pad_left
 
         for frame_idx in range(total_frames):
             ret, frame = cap.read()
             if not ret:
                 break
 
-            # Crop square ROI centered on workspace
-            cropped = frame[y_offset : y_offset + crop_size, x_offset : x_offset + crop_size]
-            resized = cv2.resize(cropped, self.target_size)
+            # Letterbox pad to preserve 100% of the field of view without clipping
+            padded = cv2.copyMakeBorder(
+                frame, pad_top, pad_bottom, pad_left, pad_right,
+                cv2.BORDER_CONSTANT, value=[30, 30, 30]
+            )
+            resized = cv2.resize(padded, self.target_size)
             rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
             t = frame_idx / fps
@@ -136,6 +139,8 @@ class HandTrajectoryExtractor:
             wrist_pos = None
             pinch_dist = last_valid_dist
             lms_21 = np.zeros((21, 3), dtype=np.float32)
+            used_landmark_name = "L8 (TIP)"
+            active_target_pt = None
 
             if detection_result.hand_landmarks:
                 detected_indices.append(frame_idx)
@@ -146,41 +151,88 @@ class HandTrajectoryExtractor:
                 wrist_pos = lms_21[0].copy()
                 last_valid_wrist = wrist_pos.copy()
 
-                # Thumb tip = 4, Index tip = 8, Middle tip = 12
+                # Landmarks: 4=Thumb Tip, 8=Index Tip, 7=Index DIP, 6=Index PIP, 5=Index MCP
                 thumb_tip = lms_21[4]
-                index_tip = lms_21[8]
-                pinch_dist = float(np.linalg.norm(thumb_tip - index_tip))
+                idx_tip = lms_21[8]
+                idx_dip = lms_21[7]
+                idx_pip = lms_21[6]
+
+                # Check if index tip abruptly moved or went near image edge
+                is_idx_abrupt = False
+                if last_valid_idx_tip is not None:
+                    step_displacement = np.linalg.norm(idx_tip - last_valid_idx_tip)
+                    if step_displacement > jump_threshold:
+                        is_idx_abrupt = True
+
+                # Also flag if landmark 8 is jammed near the edge
+                if idx_tip[1] < 0.04 or idx_tip[1] > 0.96 or idx_tip[0] < 0.04 or idx_tip[0] > 0.96:
+                    is_idx_abrupt = True
+
+                if not is_idx_abrupt:
+                    last_valid_idx_tip = idx_tip.copy()
+                    # Tip is trustworthy: use minimum distance to tip or DIP
+                    d_tip = float(np.linalg.norm(thumb_tip - idx_tip))
+                    d_dip = float(np.linalg.norm(thumb_tip - idx_dip))
+                    if d_tip <= d_dip:
+                        pinch_dist = d_tip
+                        active_target_pt = idx_tip
+                        used_landmark_name = "L8 (TIP)"
+                    else:
+                        pinch_dist = d_dip
+                        active_target_pt = idx_dip
+                        used_landmark_name = "L7 (DIP)"
+                else:
+                    # Index tip is occluded/abrupt; fallback to DIP (L7) or PIP (L6)
+                    d_dip = float(np.linalg.norm(thumb_tip - idx_dip))
+                    d_pip = float(np.linalg.norm(thumb_tip - idx_pip))
+                    if d_dip <= d_pip:
+                        pinch_dist = d_dip
+                        active_target_pt = idx_dip
+                        used_landmark_name = "L7 (DIP fallback)"
+                    else:
+                        pinch_dist = d_pip
+                        active_target_pt = idx_pip
+                        used_landmark_name = "L6 (PIP fallback)"
+
                 last_valid_dist = pinch_dist
 
             elif last_valid_wrist is not None:
-                # Retain last known position with decaying momentum
+                # Maintain last known position
                 wrist_pos = last_valid_wrist.copy()
             else:
-                # Hand not yet entered workspace
+                # Hand not yet in view
                 wrist_pos = np.array([0.5, 0.9, 0.0], dtype=np.float32)
 
-            # Grasp classification:
-            # When fingers close around the steel glass, pinch distance drops below threshold
-            gripper_cmd = 1.0 if pinch_dist < self.grasp_threshold else -1.0
+            # Hysteresis trigger for gripper state:
+            # Prevents chatter / flickering around threshold boundary
+            if current_gripper_state < 0:  # currently OPEN
+                if pinch_dist < close_threshold:
+                    current_gripper_state = 1.0  # CLOSED
+            else:  # currently CLOSED
+                if pinch_dist > open_threshold:
+                    current_gripper_state = -1.0  # OPEN
+
+            gripper_cmd = current_gripper_state
 
             if save_annotated_video and annotated_writer:
                 vis_bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
                 if detection_result.hand_landmarks:
-                    # Draw keypoint dots
+                    # Draw keypoints
                     for pt in lms_21:
                         px, py = int(pt[0] * self.target_size[0]), int(pt[1] * self.target_size[1])
                         cv2.circle(vis_bgr, (px, py), 3, (0, 255, 0), -1)
 
-                    # Highlight pinch line
-                    p_thumb = (int(lms_21[4, 0] * self.target_size[0]), int(lms_21[4, 1] * self.target_size[1]))
-                    p_index = (int(lms_21[8, 0] * self.target_size[0]), int(lms_21[8, 1] * self.target_size[1]))
-                    line_color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
-                    cv2.line(vis_bgr, p_thumb, p_index, line_color, 2)
+                    # Highlight pinch line to the active landmark
+                    if active_target_pt is not None:
+                        p_thumb = (int(lms_21[4, 0] * self.target_size[0]), int(lms_21[4, 1] * self.target_size[1]))
+                        p_target = (int(active_target_pt[0] * self.target_size[0]), int(active_target_pt[1] * self.target_size[1]))
+                        line_color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
+                        cv2.line(vis_bgr, p_thumb, p_target, line_color, 2)
 
                 status_text = f"GRIPPER: {'CLOSED (HOLDING GLASS)' if gripper_cmd > 0 else 'OPEN (REACHING)'}"
                 color = (0, 0, 255) if gripper_cmd > 0 else (0, 255, 0)
-                cv2.putText(vis_bgr, status_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 2)
-                cv2.putText(vis_bgr, f"Dist: {pinch_dist:.3f}", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+                cv2.putText(vis_bgr, status_text, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 2)
+                cv2.putText(vis_bgr, f"Dist: {pinch_dist:.3f} [{used_landmark_name}]", (10, 38), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
                 annotated_writer.write(vis_bgr)
 
             frames_rgb.append(rgb_frame)
