@@ -8,3 +8,4 @@ dist/
 data/dataset.hdf5
 models/
 *.jpg
+.agents/

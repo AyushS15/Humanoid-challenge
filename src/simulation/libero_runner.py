@@ -9,6 +9,15 @@ import cv2
 import numpy as np
 from typing import Dict, Any, Tuple, Optional
 
+# Register GlassLift environment (steel cylinder) before robosuite is called
+try:
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from src.simulation.glass_lift_env import register_glass_lift_env
+    register_glass_lift_env()
+except Exception:
+    pass  # graceful fallback — GlassLift will just be unavailable
+
 
 class PandaSimEnvironment:
     """
@@ -17,7 +26,7 @@ class PandaSimEnvironment:
 
     def __init__(
         self,
-        env_name: str = "Lift",
+        env_name: str = "GlassLift",
         has_renderer: bool = False,
         has_offscreen_renderer: bool = True,
         camera_name: str = "agentview",
@@ -59,6 +68,7 @@ class PandaSimEnvironment:
                 control_freq=self.control_freq,
                 horizon=500,
                 use_camera_obs=has_offscreen_renderer,
+                initialization_noise=None,
             )
             self.is_libero = False
             print(f"[+] Loaded RoboSuite environment '{env_name}' with Franka Panda.")
