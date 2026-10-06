@@ -1,0 +1,184 @@
+{
+  "Vid_0": {
+    "episode": "Vid_0",
+    "total_frames": 198,
+    "prompts_evaluation": {
+      "Detailed": {
+        "overall_action_mse": 0.4350670738653703,
+        "overall_fm_loss": 0.8496209691193971,
+        "phase_action_mse": {
+          "Approach": 0.47135085860888165,
+          "Grasp": 0.45253215730190277,
+          "Lift": 0.531653955578804,
+          "Descent": 0.34898442029953003,
+          "Withdraw": 0.3526720851659775
+        },
+        "num_sampled_steps": 11
+      },
+      "Partial": {
+        "overall_action_mse": 0.4272874106060375,
+        "overall_fm_loss": 0.321916748854247,
+        "phase_action_mse": {
+          "Approach": 0.48622657855351764,
+          "Grasp": 0.4113588333129883,
+          "Lift": 0.4589702934026718,
+          "Descent": 0.3736863136291504,
+          "Withdraw": 0.3767254501581192
+        },
+        "num_sampled_steps": 11
+      },
+      "Vague": {
+        "overall_action_mse": 0.5558786175467751,
+        "overall_fm_loss": 0.25738388232209464,
+        "phase_action_mse": {
+          "Approach": 0.7925653755664825,
+          "Grasp": 0.4959030896425247,
+          "Lift": 0.5861952751874924,
+          "Descent": 0.380546435713768,
+          "Withdraw": 0.4058395326137543
+        },
+        "num_sampled_steps": 11
+      }
+    },
+    "action_divergence": {
+      "Detailed_vs_Partial_L2": 0.3692028224468231,
+      "Detailed_vs_Vague_L2": 0.4544322192668915,
+      "Partial_vs_Vague_L2": 0.6149979829788208
+    },
+    "sampled_timesteps": [
+      0,
+      20,
+      40,
+      60,
+      80,
+      100,
+      120,
+      140,
+      160,
+      180,
+      197
+    ]
+  },
+  "Vid_2": {
+    "episode": "Vid_2",
+    "total_frames": 254,
+    "prompts_evaluation": {
+      "Detailed": {
+        "overall_action_mse": 0.4938374544892992,
+        "overall_fm_loss": 0.22531218347804888,
+        "phase_action_mse": {
+          "Approach": 0.48637865483760834,
+          "Grasp": 0.5184756070375443,
+          "Lift": 0.3437451918919881,
+          "Descent": 0.5644350945949554,
+          "Withdraw": 0.5903842548529307
+        },
+        "num_sampled_steps": 14
+      },
+      "Partial": {
+        "overall_action_mse": 0.4586354855980192,
+        "overall_fm_loss": 0.1296857377248151,
+        "phase_action_mse": {
+          "Approach": 0.4819556102156639,
+          "Grasp": 0.4206240326166153,
+          "Lift": 0.3630686203638713,
+          "Descent": 0.4627472013235092,
+          "Withdraw": 0.5457086761792501
+        },
+        "num_sampled_steps": 14
+      },
+      "Vague": {
+        "overall_action_mse": 0.6838374606200627,
+        "overall_fm_loss": 0.19929774850606918,
+        "phase_action_mse": {
+          "Approach": 0.728403627872467,
+          "Grasp": 0.6755847632884979,
+          "Lift": 0.3605585992336273,
+          "Descent": 0.6578138470649719,
+          "Withdraw": 0.970545639594396
+        },
+        "num_sampled_steps": 14
+      }
+    },
+    "action_divergence": {
+      "Detailed_vs_Partial_L2": 0.40710386633872986,
+      "Detailed_vs_Vague_L2": 0.5360938906669617,
+      "Partial_vs_Vague_L2": 0.6902260184288025
+    },
+    "sampled_timesteps": [
+      0,
+      20,
+      40,
+      60,
+      80,
+      100,
+      120,
+      140,
+      160,
+      180,
+      200,
+      220,
+      240,
+      253
+    ]
+  },
+  "Vid_5": {
+    "episode": "Vid_5",
+    "total_frames": 169,
+    "prompts_evaluation": {
+      "Detailed": {
+        "overall_action_mse": 0.44380387365818025,
+        "overall_fm_loss": 0.5700168140232563,
+        "phase_action_mse": {
+          "Approach": 0.47597913940747577,
+          "Grasp": 0.5551874041557312,
+          "Lift": 0.4898516684770584,
+          "Descent": 0.3896750211715698,
+          "Withdraw": 0.34793026745319366
+        },
+        "num_sampled_steps": 10
+      },
+      "Partial": {
+        "overall_action_mse": 0.4320595771074295,
+        "overall_fm_loss": 0.16837793849408628,
+        "phase_action_mse": {
+          "Approach": 0.5037414034207662,
+          "Grasp": 0.4482901990413666,
+          "Lift": 0.4003344476222992,
+          "Descent": 0.411903515458107,
+          "Withdraw": 0.36830271780490875
+        },
+        "num_sampled_steps": 10
+      },
+      "Vague": {
+        "overall_action_mse": 0.5722244411706925,
+        "overall_fm_loss": 0.18796007931232453,
+        "phase_action_mse": {
+          "Approach": 0.765453428030014,
+          "Grasp": 0.5519986152648926,
+          "Lift": 0.6299143135547638,
+          "Descent": 0.4171007424592972,
+          "Withdraw": 0.3899277001619339
+        },
+        "num_sampled_steps": 10
+      }
+    },
+    "action_divergence": {
+      "Detailed_vs_Partial_L2": 0.39434415102005005,
+      "Detailed_vs_Vague_L2": 0.49617260694503784,
+      "Partial_vs_Vague_L2": 0.6237415075302124
+    },
+    "sampled_timesteps": [
+      0,
+      20,
+      40,
+      60,
+      80,
+      100,
+      120,
+      140,
+      160,
+      168
+    ]
+  }
+}

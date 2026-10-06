@@ -1,0 +1,9 @@
+{
+  "model_type": "smolvla_glass_expert",
+  "epochs": 30,
+  "batch_size": 8,
+  "final_train_loss": 0.00904506171355024,
+  "best_val_loss": 0.016378251475874673,
+  "total_time_s": 1446.6562938690186,
+  "prompt": "approach the glass on the table and grasp the cylinder and lift the cylinder and then bring down the cylinder to the table and then withdraw your hands"
+}

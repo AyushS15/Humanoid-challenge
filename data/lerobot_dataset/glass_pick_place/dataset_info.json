@@ -1,0 +1,44 @@
+{
+  "dataset_name": "glass_pick_place",
+  "robot": "Franka Panda",
+  "action_dim": 7,
+  "action_format": "OSC_POSE [dx, dy, dz, droll, dpitch, dyaw, gripper]",
+  "state_dim": 7,
+  "image_resolution": [
+    256,
+    256,
+    3
+  ],
+  "camera": "agentview",
+  "train_episodes": [
+    "Vid_0",
+    "Vid_2"
+  ],
+  "test_episodes": [
+    "Vid_5"
+  ],
+  "train_frames": 452,
+  "test_frames": 169,
+  "task_prompts": {
+    "detailed": "approach the glass on the table and grasp the cylinder and lift the cylinder and then bring down the cylinder to the table and then withdraw your hands",
+    "partial": "approach the glass, grasp it and lift the cylinder",
+    "vague": "lift up and down the glass"
+  },
+  "episode_stats": {
+    "Vid_0": {
+      "num_frames": 198,
+      "max_lift_cm": 7.182397215606418,
+      "success": true
+    },
+    "Vid_2": {
+      "num_frames": 254,
+      "max_lift_cm": 8.183108046382948,
+      "success": true
+    },
+    "Vid_5": {
+      "num_frames": 169,
+      "max_lift_cm": 5.815808893933482,
+      "success": true
+    }
+  }
+}
