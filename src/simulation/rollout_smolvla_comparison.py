@@ -160,9 +160,8 @@ def run_smolvla_rollout(
             for k in range(min(chunk_exec_steps, len(pred_actions))):
                 action_queue.append(pred_actions[k])
 
-            if device.type == "mps":
-                torch.mps.empty_cache()
-                gc.collect()
+            # Note: Do NOT call torch.mps.empty_cache() here as it purges the shared
+            # Apple Silicon Unified Memory pool and corrupts MuJoCo's OpenGL CGL framebuffer.
 
         # Pop next action from queue
         act = action_queue.pop(0)
