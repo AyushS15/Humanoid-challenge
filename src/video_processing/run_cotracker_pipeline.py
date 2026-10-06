@@ -185,11 +185,21 @@ def run_batch_pipeline(
     print("=" * 80)
     print(f"{'Video':<10} | {'Frames':<8} | {'Max Lift (cm)':<14} | {'Table Return':<14} | {'Success':<8} | {'Time (s)':<8}")
     print("-" * 80)
+    summary_lines = [
+        "# CoTracker3 Retargeting Benchmark Summary\n",
+        "| Video | Frames | Max Lift (cm) | Table Return | Success | Runtime (s) | Comparison Video |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in results:
         ret_str = "YES" if r.get("returned_to_table", False) else "NO"
         succ_str = "PASS" if r["success"] else "FAIL"
         print(f"{r['video']:<10} | {r['frames']:<8} | {r['max_lift_cm']:<14.1f} | {ret_str:<14} | {succ_str:<8} | {r['runtime_s']:<8.1f}")
+        summary_lines.append(f"| {r['video']} | {r['frames']} | {r['max_lift_cm']:.1f} | {ret_str} | **{succ_str}** | {r['runtime_s']:.1f}s | `{r['comparison_video']}` |")
     print("=" * 80)
+
+    summary_file = Path(output_dir) / "benchmark_summary.md"
+    summary_file.write_text("\n".join(summary_lines) + "\n")
+    print(f"[+] Saved benchmark summary report -> {summary_file}")
 
 
 if __name__ == "__main__":
