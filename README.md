@@ -580,12 +580,35 @@ humanoid-challenge/
 
 ## 9. Part IX: Quick-Start & Reproduction Guide
 
+### Prerequisites
+- **Python Version**: Python 3.10 or 3.11 (Note: macOS system `python3` defaults to 3.9; Python 3.10+ is strictly required by `lerobot>=0.3.0` and PyTorch MPS).
+- **Environment Tool**: [`uv`](https://github.com/astral-sh/uv) (strongly recommended for 10x faster installation and automatic Python 3.10 provisioning) or `conda` / `pyenv`.
+
 ### Setup
+
+#### Option A: Fast Setup with `uv` (Recommended)
 ```bash
 git clone https://github.com/AyushS15/Humanoid-challenge.git
 cd Humanoid-challenge
-python3 -m venv .venv
+
+# 1. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Create Python 3.10 venv and install all dependencies
+uv venv --python 3.10 .venv
 source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+#### Option B: Standard Setup (Requires Python 3.10 or 3.11)
+```bash
+git clone https://github.com/AyushS15/Humanoid-challenge.git
+cd Humanoid-challenge
+
+# Make sure you are using python3.10 or python3.11 (not macOS default python3.9)
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
