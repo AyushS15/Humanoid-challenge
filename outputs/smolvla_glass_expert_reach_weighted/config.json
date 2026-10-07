@@ -1,0 +1,17 @@
+{
+  "model_type": "smolvla_glass_expert_reach_weighted",
+  "warmstart": "outputs/smolvla_glass_expert",
+  "epochs": 15,
+  "batch_size": 8,
+  "final_train_loss": 0.03412352252884635,
+  "best_val_loss": 0.08686763158237393,
+  "total_time_s": 595.5480499267578,
+  "prompt": "approach the glass on the table and grasp the cylinder and lift the cylinder and then bring down the cylinder to the table and then withdraw your hands",
+  "weights": {
+    "w_x": 5.0,
+    "w_y": 1.0,
+    "w_z": 4.0,
+    "w_rot": 0.5,
+    "w_grip": 2.0
+  }
+}

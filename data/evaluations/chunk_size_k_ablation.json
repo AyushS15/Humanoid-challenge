@@ -1,0 +1,50 @@
+{
+  "K_1": {
+    "k_steps": 1,
+    "max_lift_cm": 0.0,
+    "success": false,
+    "min_d_xy_cm": 4.614526330616477,
+    "min_d_3d_cm": 5.71737502335193,
+    "lowest_eef_z_m": 0.8627094846966612,
+    "fps": 8.743699548177648,
+    "total_time_s": 13.724167823791504,
+    "num_inferences": 120,
+    "video_path": "data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K1.mp4"
+  },
+  "K_2": {
+    "k_steps": 2,
+    "max_lift_cm": 0.0,
+    "success": false,
+    "min_d_xy_cm": 4.478213038590751,
+    "min_d_3d_cm": 5.259138655746956,
+    "lowest_eef_z_m": 0.8593972903066728,
+    "fps": 17.033700375615823,
+    "total_time_s": 7.044857978820801,
+    "num_inferences": 60,
+    "video_path": "data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K2.mp4"
+  },
+  "K_5": {
+    "k_steps": 5,
+    "max_lift_cm": 0.0,
+    "success": false,
+    "min_d_xy_cm": 3.3581013930945502,
+    "min_d_3d_cm": 4.9917397109602,
+    "lowest_eef_z_m": 0.8649061781683556,
+    "fps": 37.32740663040002,
+    "total_time_s": 3.2147960662841797,
+    "num_inferences": 24,
+    "video_path": "data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K5.mp4"
+  },
+  "K_10": {
+    "k_steps": 10,
+    "max_lift_cm": 0.0,
+    "success": false,
+    "min_d_xy_cm": 4.158148490796107,
+    "min_d_3d_cm": 4.717015105638748,
+    "lowest_eef_z_m": 0.8602689419761405,
+    "fps": 58.28737316571022,
+    "total_time_s": 2.058764934539795,
+    "num_inferences": 12,
+    "video_path": "data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K10.mp4"
+  }
+}

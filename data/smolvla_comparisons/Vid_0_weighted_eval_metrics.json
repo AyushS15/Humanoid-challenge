@@ -1,0 +1,10 @@
+{
+  "video_id": "Vid_0",
+  "k_steps": 5,
+  "checkpoint": "outputs/smolvla_glass_expert_reach_weighted",
+  "max_lift_cm": 0.0,
+  "min_d_xy_cm": 3.0869243458241917,
+  "max_reach_x_m": -0.0645773473331793,
+  "lowest_eef_z_m": 0.8905952007373761,
+  "success": false
+}
