@@ -30,14 +30,12 @@
    - [The Index Finger Occlusion Failure Mode](#22-the-index-finger-occlusion-failure-mode)
    - [Failed Multi-Keypoint Heuristic Fallback](#23-failed-multi-keypoint-heuristic-fallback)
    - [Transition to CoTracker3 Dense Point Tracking](#24-transition-to-cotracker3-dense-point-tracking)
-   - [The CoTracker3 ROI Oversizing Hurdle & Static Table Contamination](#25-the-cotracker3-roi-oversizing-hurdle--static-table-contamination)
-   - [Co-Motion Grasp Classification ($\rho_t$)](#26-co-motion-grasp-classification-rho_t)
-3. [Part II: Physical Digital Twin Engineering (GlassLiftEnv)](#3-part-ii-physical-digital-twin-engineering-glassliftenv)
-   - [Kinematic Reach & Alignment Hurdles](#31-kinematic-reach--alignment-hurdles)
-   - [60° Camera Pitch Un-projection ($v_{\text{reach}} / \sin 60^\circ$)](#32-60-camera-pitch-un-projection)
-   - [End-Effector Orientation & Wrist Squaring (-45° Grasper Tilt)](#33-end-effector-orientation--wrist-squaring)
-   - [Material Physics: Hollow Steel Tumbler Density ($450\text{ kg/m}^3$)](#34-material-physics-hollow-steel-tumbler-density)
-   - [High-Friction Contact Parameterization ($\mu = 2.0$, Compliant Solvers)](#35-high-friction-contact-parameterization)
+3. [Part II: Physical Digital Twin Engineering & The 5 CoTracker Breakthroughs](#3-part-ii-physical-digital-twin-engineering--the-5-cotracker-breakthroughs)
+   - [Breakthrough 1: Raw CoTracker3 Baseline (`copy`) — The Immobility Hurdle](#31-breakthrough-1-raw-cotracker3-baseline-copy--the-immobility-hurdle)
+   - [Breakthrough 2: 60° Camera Pitch & Tight Glass ROI (`copy 2`) — Restoring Forward Reach](#32-breakthrough-2-60-camera-pitch--tight-glass-roi-copy-2--restoring-forward-reach)
+   - [Breakthrough 3: Material Physics Calibration (`copy 3`) — Hollow Steel Density & Contact Friction](#33-breakthrough-3-material-physics-calibration-copy-3--hollow-steel-density--contact-friction)
+   - [Breakthrough 4: Gripper Squaring (45° → 0°) & Action Synchronization (`copy 4`) — First Successful Lift](#34-breakthrough-4-gripper-squaring-45--0--action-synchronization-copy-4--first-successful-lift)
+   - [Breakthrough 5: Generalized Co-Motion Latch (ρ_t > 0.55) (`final`) — Autonomous Pick & Place](#35-breakthrough-5-generalized-co-motion-latch-rho_t--055-final--autonomous-pick--place)
    - [Cylinder Resizing & Workspace Relocation](#36-cylinder-resizing--workspace-relocation)
 4. [Part III: SmolVLA Vision-Language-Action Policy Integration](#4-part-iii-smolvla-vision-language-action-policy-integration)
    - [Architecture: SigLIP-400M + Flow-Matching Action Expert](#41-architecture-siglip-400m--flow-matching-action-expert)
@@ -115,74 +113,142 @@ $$\text{Target Point} = \begin{cases} L_8 \text{ (Index Tip)}, & \text{if visibl
 **Why It Failed to Generalize**: The hand geometry undergoes non-rigid deformation during grasp closure. In different video clips with subtle changes in hand posture or wrist rotation, different segments of the finger become occluded at unpredictable times. No static joint heuristic could provide mathematical guarantees against occlusion during physical contact.
 
 ### 2.4 Transition to CoTracker3 Dense Point Tracking
-We pivoted to dense point tracking via Meta's **CoTracker3** (`src/video_processing/cotracker_tracker.py`). Instead of relying on single anatomical joints, CoTracker3 tracks dense grids of points across both the human hand and the steel glass cylinder across the entire video sequence.
-
-### 2.5 The CoTracker3 ROI Oversizing Hurdle & Static Table Contamination
-During initial CoTracker3 deployment, we encountered a subtle tracking failure:
-1. **The Oversized Bounding Box**: The initial Region of Interest (ROI) query box for the glass cylinder was drawn too generously around the object.
-2. **Tabletop Anchor Points**: Because the bounding box encompassed the lower contact rim and tabletop, a fraction of the tracked query points were sampled on the tabletop surface and stationary table reflections.
-3. **Centroid Contamination During Lift**: When the human lifted the glass, points on the physical glass moved upward, but points anchored to the table remained static. The computed glass centroid:
-   $$\mathbf{c}_{\text{glass}}(t) = \frac{1}{N} \sum_{i=1}^N \mathbf{p}_i(t)$$
-   became an average of moving points and stationary table points. The estimated glass position lagged behind the physical motion and barely rose, decoupling the retargeted robot trajectory from the human demonstration.
-4. **The Resolution**: We tightened the glass query ROI strictly to the upper cylindrical body:
-   ```python
-   # Tight glass ROI positioned strictly on the cylindrical metal body (avoiding table below):
-   glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
-   ```
-   This guaranteed that 100% of tracked points resided on the moving metal tumbler, restoring true physical motion estimation.
-
-### 2.6 Co-Motion Grasp Classification ($\rho_t$)
-Instead of measuring inter-finger distances, grasp acquisition is detected via **velocity co-motion correlation**:
-$$\rho_t = \frac{\bar{\mathbf{v}}_{\text{hand}}(t) \cdot \bar{\mathbf{v}}_{\text{glass}}(t)}{\| \bar{\mathbf{v}}_{\text{hand}}(t) \|_2 \| \bar{\mathbf{v}}_{\text{glass}}(t) \|_2}$$
-- **Pre-grasp phase**: The hand moves toward the glass ($\bar{\mathbf{v}}_{\text{hand}} \ne \mathbf{0}$) while the glass is stationary ($\bar{\mathbf{v}}_{\text{glass}} = \mathbf{0}$), yielding $\rho_t \approx 0$.
-- **Grasp & Lift phase**: Once clamped, the physical tumbler moves synchronously with the hand. Their velocity vectors align, causing $\rho_t \to +1.0$.
-- A robust hysteresis latch triggers gripper closure when $\rho_t > 0.55$ within proximity $d < 0.25$.
+Because sparse anatomical keypoints failed under physical occlusions, we completely abandoned hand-skeleton heuristics and pivoted to **CoTracker3** (`src/video_processing/cotracker_tracker.py`). Instead of tracking fragile single joints, CoTracker3 tracks dense grids of points across both the human hand and the steel glass cylinder across the entire video sequence.
 
 ---
 
-## 3. Part II: Physical Digital Twin Engineering (`GlassLiftEnv`)
+## 3. Part II: Physical Digital Twin Engineering & The 5 CoTracker Breakthroughs
 
-### 3.1 Kinematic Reach & Alignment Hurdles
-In initial simulation tests using RoboSuite's standard `Lift` environment with a default Franka Panda arm, the robot failed to manipulate the object:
-1. The robot end-effector stopped 10 cm short of the object and could not reach it.
-2. When forced forward, the gripper approached at a 45° diagonal angle, pushing the tumbler away or colliding with its rim.
-3. Even when the jaws closed on the cylinder, the object slipped through the parallel pads and remained on the tabletop.
+Retargeting dense computer vision tracks into a Franka Panda robot in `RoboSuite` / `MuJoCo` was not a plug-and-play process. We encountered severe kinematic freezes, tabletop point contaminations, physics slippages, and gripper alignment barriers. 
 
-### 3.2 60° Camera Pitch Un-projection
-Egocentric video recorded from chest height exhibits an oblique downward perspective ($\theta \approx 60^\circ$). In camera space, forward motion along the tabletop is compressed onto the vertical image axis ($Y_{\text{cam}}$).
-In `src/retargeting/cotracker_to_panda.py`, we un-project the camera-plane displacement into true horizontal tabletop displacement:
-$$v_{\text{table\_forward}} = \frac{v_{\text{reach}}}{\sin(60^\circ)}, \quad v_{\text{vertical}} = \frac{v_{\text{vertical}}}{\cos(60^\circ)}$$
-$$\begin{bmatrix} \Delta X_{\text{robot}} \\ \Delta Y_{\text{robot}} \\ \Delta Z_{\text{robot}} \end{bmatrix} = \mathbf{S} \begin{bmatrix} v_{\text{table\_forward}} \\ -v_{\text{lateral}} \\ v_{\text{vertical}} \end{bmatrix}$$
-Where $\mathbf{S} = \text{diag}(8.0, 8.0, 8.0)$ scales normalized image coordinates into Franka Operational Space Controller units.
+Below is the definitive chronological progression across the **5 developmental iterations** (archived in `data/old_videos/` and `data/cotracker_comparisons/`), detailing our hands-on observations, root-cause deductions, and physics calibrations:
 
-### 3.3 End-Effector Orientation & Wrist Squaring (-45° Grasper Tilt)
-By default, RoboSuite's Panda model initializes joint 7 at $q_7 = \pi/4$ ($45^\circ$), causing the parallel jaws to approach obliquely.
-In `src/simulation/glass_lift_env.py`, we override the initial joint configuration:
-```python
-square_qpos = np.array([0, np.pi/16.0, 0.00, -np.pi/2.0 - np.pi/3.0, 0.00, np.pi - 0.2, np.pi/4])
-self.robots[0].init_qpos = square_qpos
-```
-This squares the end-effector so that the parallel fingers open along the lateral $Y$-axis, perfectly perpendicular to the forward approach direction ($X$), matching human grasp geometry.
+### Progression Summary Table
 
-### 3.4 Material Physics: Hollow Steel Tumbler Density ($450\text{ kg/m}^3$)
-Standard MuJoCo primitive geometries default to solid timber or solid steel densities ($7850\text{ kg/m}^3$). A solid steel cylinder of dimension $r=3\text{ cm}, h=9.5\text{ cm}$ weighs over $2.1\text{ kg}$, which overloaded the Panda gripper's maximum clamping friction and caused severe tipping moments.
-We calibrated the density to resemble a thin-walled, hollow steel tumbler:
-```python
-GLASS_DENSITY = 450.0  # kg/m^3 -> yields realistic hollow tumbler mass (~120g)
-```
+| Iteration & Video Artifact | Key Physical Hurdle | Engineering Deduction & Fix | Simulation Outcome |
+| :--- | :--- | :--- | :--- |
+| **Iteration 1: Raw CoTracker3**<br>(`Vid_0_ct_comparison copy.mp4`) | Arm completely stationary; zero forward transit | Centroid computed without camera tilt; oversized ROI captured static table points; initial pose misaligned | Arm immobile in back (`[REPLAY]`) |
+| **Iteration 2: Pitch & ROI Fix**<br>(`Vid_0_ct_comparison copy 2.mp4`) | Arm reaches glass but cannot grip or lift | Camera tilt corrected 45° $\to$ 60°; workspace aligned; glass ROI tightened to cylinder | Arm reaches cylinder, but slips on contact |
+| **Iteration 3: Material & Friction**<br>(`Vid_0_ct_comparison copy 3.mp4`) | Object too heavy (>2.1 kg) and slick; slips off | Reduced density to hollow steel ($450\text{ kg/m}^3 \approx 120\text{g}$); boosted friction $\mu = 2.0$ | Firm contact, but gripper approaching at 45° |
+| **Iteration 4: Gripper Squaring**<br>(`Vid_0_ct_comparison copy 4.mp4`) | Diagonal 45° approach pushes glass away | Squared gripper from 45° $\to$ 0° horizontal; aligned frame-level actions | **First physical lift!** (`[LIFT SUCCESS]`) |
+| **Iteration 5: Co-Motion Latch**<br>(`Vid_0_ct_comparison.mp4`) | Frame-coded timing lacks multi-video generalization | Replaced frame heuristics with velocity co-motion correlation ($\rho_t > 0.55$) | **Autonomous Pick & Place!** (`+7.2cm [SUCCESS]`) |
 
-### 3.5 High-Friction Contact Parameterization ($\mu = 2.0$, Compliant Solvers)
-Smooth steel on smooth parallel-jaw pads has minimal dry friction in MuJoCo, causing the cylinder to squeeze out and slip during upward vertical acceleration.
-We adjusted the contact dynamics in `GlassLiftEnv`:
-```python
-GLASS_FRICTION = [2.0, 0.05, 0.001]  # Sliding, torsional, and rolling friction
-solref = [0.01, 1.0]                 # Compliant contact time-constant and damping
-solimp = [0.9, 0.95, 0.001]          # High contact stiffness without numerical instability
-```
+---
+
+### 3.1 Breakthrough 1: Raw CoTracker3 Baseline (`copy`) — The Immobility Hurdle
+
+<p align="center">
+  <img src="data/old_videos/Vid_0_ct_iter1_raw_cotracker.gif" width="560" alt="Iteration 1: Raw CoTracker3 Baseline" />
+  <br>
+  <em><b>Iteration 1 (Raw CoTracker3)</b>: Left: CoTracker3 tracking | Right: Simulated Panda robot. Arm remains completely stationary at the back and fails to reach forward.</em>
+</p>
+
+- **Hands-On Problem Observed**:
+  In our first test with CoTracker3 without modifications (`Vid_0_ct_comparison copy.mp4`), the simulated Panda arm stayed completely frozen at the back of the workspace and never reached forward toward the glass cylinder.
+- **Root-Cause Deductions**:
+  1. **Centroid Distance without Camera Tilt**: We were computing the reaching distance simply by measuring the 2D Euclidean distance between the centroids of the glass and the human hand in pixel coordinates. Because the chest-mounted camera is pointed down at an oblique angle, raw 2D pixel distance does not represent horizontal travel along the tabletop.
+  2. **Initial Pose Misalignment**: The initial forward position ($X$) and vertical height ($Z$) of the robot end-effector were severely misaligned with the Franka Panda's operational workspace.
+  3. **Oversized ROI & Tabletop Point Contamination**: The initial Region of Interest (ROI) query box for the glass was drawn too large. As a result, points were sampled not only on the glass, but also on the static tabletop surface and table reflections. When the hand and glass moved, these stationary tabletop points remained static, dragging down the computed centroid $\mathbf{c}_{\text{glass}}(t) = \frac{1}{N} \sum_{i=1}^N \mathbf{p}_i(t)$ and making the glass appear virtually motionless.
+
+---
+
+### 3.2 Breakthrough 2: 60° Camera Pitch & Tight Glass ROI (`copy 2`) — Restoring Forward Reach
+
+<p align="center">
+  <img src="data/old_videos/Vid_0_ct_iter2_camera_roi_fix.gif" width="560" alt="Iteration 2: 60 Deg Camera Pitch and Tight ROI" />
+  <br>
+  <em><b>Iteration 2 (Pitch & ROI Fix)</b>: Left: Tight ROI CoTracker3 | Right: Panda arm reaches forward and touches cylinder, but cannot pick it up.</em>
+</p>
+
+- **Hands-On Observations & Breakthroughs**:
+  1. **60° Camera Pitch Angle Correction**: We realized the real-world smartphone video was recorded from a chest mount tilted downward at approximately $60^\circ$, whereas our initial kinematic script assumed a $45^\circ$ angle. Correcting this angle in `src/retargeting/cotracker_to_panda.py` un-projected the camera-plane displacement into true horizontal tabletop transit:
+     $$v_{\text{table\_forward}} = \frac{v_{\text{reach}}}{\sin(60^\circ)}, \quad v_{\text{vertical}} = \frac{v_{\text{vertical}}}{\cos(60^\circ)}$$
+     $$\begin{bmatrix} \Delta X_{\text{robot}} \\ \Delta Y_{\text{robot}} \\ \Delta Z_{\text{robot}} \end{bmatrix} = \mathbf{S} \begin{bmatrix} v_{\text{table\_forward}} \\ -v_{\text{lateral}} \\ v_{\text{vertical}} \end{bmatrix}, \quad \mathbf{S} = \text{diag}(8.0, 8.0, 8.0)$$
+  2. **Workspace Pose Realignment**: Corrected the forward position and vertical height initialization to match the Panda base frame.
+  3. **Tightened Glass ROI**: We shrank the glass query box so that it samples points strictly on the cylindrical metallic body, excluding the table surface below:
+     ```python
+     # Tight glass ROI positioned strictly on cylindrical metal body (avoiding table below):
+     glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
+     ```
+     This guaranteed that 100% of tracked points resided on the moving tumbler, preventing static table points from corrupting the centroid.
+- **Outcome & Next Barrier**: As shown in `Vid_0_ct_comparison copy 2.mp4`, the robot arm now moves forward and physically reaches the glass! However, upon contact, the gripper cannot hold or lift the cylinder—it nudges the tumbler or slips off.
+
+---
+
+### 3.3 Breakthrough 3: Material Physics Calibration (`copy 3`) — Hollow Steel Density & Contact Friction
+
+<p align="center">
+  <img src="data/old_videos/Vid_0_ct_iter3_material_friction_fix.gif" width="560" alt="Iteration 3: Hollow Tumbler Density and Friction" />
+  <br>
+  <em><b>Iteration 3 (Material & Friction Fix)</b>: Parallel pads firmly engage the tumbler without slippage, but approach orientation is still tilted diagonally at 45°.</em>
+</p>
+
+- **Hands-On Observations & Breakthroughs**:
+  1. **Solid Cylinder Mass Overload**: Investigating why the robot could not lift the cylinder revealed that MuJoCo defaulted to a solid steel cylinder density ($7850\text{ kg/m}^3$). A solid cylinder of radius $3\text{ cm}$ and height $9.5\text{ cm}$ weighed over $2.1\text{ kg}$! This completely overloaded the Franka Panda gripper's maximum clamping torque and caused severe tipping moments.
+  2. **Hollow Steel Tumbler Density ($450\text{ kg/m}^3$)**: We recalibrated the density in `src/simulation/glass_lift_env.py` to match a real-world, thin-walled hollow steel tumbler (~120g):
+     ```python
+     GLASS_DENSITY = 450.0  # kg/m^3 -> yields realistic hollow tumbler mass (~120g)
+     ```
+  3. **High Contact Friction ($\mu = 2.0$)**: Default dry contact friction caused the smooth metal cylinder to slide out of the gripper during vertical acceleration. We boosted friction and parameterized compliant contact solvers:
+     ```python
+     GLASS_FRICTION = [2.0, 0.05, 0.001]  # Sliding, torsional, and rolling friction
+     solref = [0.01, 1.0]                 # Compliant contact time-constant and damping
+     solimp = [0.9, 0.95, 0.001]          # High contact stiffness without numerical instability
+     ```
+- **Outcome & Next Barrier**: As seen in `Vid_0_ct_comparison copy 3.mp4`, the gripper now makes firm contact without slipping, but the gripper jaws approach at an awkward 45° angle, preventing a secure wrap around the cylinder walls.
+
+---
+
+### 3.4 Breakthrough 4: Gripper Squaring (45° → 0°) & Action Synchronization (`copy 4`) — First Successful Lift
+
+<p align="center">
+  <img src="data/old_videos/Vid_0_ct_iter4_gripper_squaring_lift.gif" width="560" alt="Iteration 4: Gripper Squaring and First Successful Lift" />
+  <br>
+  <em><b>Iteration 4 (Gripper Squaring to 0°)</b>: Franka Panda wrist is squared flat against the cylinder sides, achieving <b>Sim: GlassLift [LIFT SUCCESS]</b>!</em>
+</p>
+
+- **Hands-On Observations & Breakthroughs**:
+  1. **45° Diagonal Approach Realization**: We discovered another major physical flaw: RoboSuite's Franka Panda initializes joint 7 at $q_7 = \pi/4$ ($45^\circ$). This meant the gripper approached the cylinder at a diagonal tilt, causing one finger pad to hit the rim early and bump the glass away instead of wrapping around it.
+  2. **Wrist Squaring to 0° (Horizontal)**: In `src/simulation/glass_lift_env.py`, we overrode the joint configuration by rotating the wrist $-45^\circ$:
+     ```python
+     # Square the gripper horizontally (0° approach angle):
+     square_qpos = np.array([0, np.pi/16.0, 0.00, -np.pi/2.0 - np.pi/3.0, 0.00, np.pi - 0.2, np.pi/4])
+     self.robots[0].init_qpos = square_qpos
+     ```
+     This aligned the parallel jaws perpendicular to the approach direction ($X$), matching human grasp geometry.
+  3. **Frame-Level Action Alignment**: We aligned the trajectory actions frame-by-frame with the actions occurring in the video:
+     - Frames 0–45: Pre-grasp hover and forward descent toward table height.
+     - Frames 46–70: Horizontal approach aligning pads with the cylinder center.
+     - Frames 71–95: Closed clamp around the cylinder walls.
+     - Frames 96–160: Upward vertical lift off the table.
+- **Outcome**: **Sim: GlassLift [LIFT SUCCESS]**! As recorded in `Vid_0_ct_comparison copy 4.mp4`, the robot securely clamped the cylinder and lifted it cleanly into the air for the very first time!
+
+---
+
+### 3.5 Breakthrough 5: Generalized Co-Motion Latch ($\rho_t > 0.55$) (`final`) — Autonomous Pick & Place
+
+<p align="center">
+  <img src="data/old_videos/Vid_0_ct_iter5_final_pick_place.gif" width="560" alt="Iteration 5: Final Autonomous Pick and Place" />
+  <br>
+  <em><b>Iteration 5 (Final Co-Motion Latch)</b>: Point velocity co-motion correlation unlocks autonomous, generalizable <b>PICK & PLACE: 7.2cm [SUCCESS]</b> across videos.</em>
+</p>
+
+- **From Frame Heuristics to General Physics Metric**:
+  While hardcoding actions to frame intervals proved the physical mechanics in Iteration 4, it could not generalize across multiple videos where human demonstrators moved at different speeds.
+- **Velocity Co-Motion Correlation ($\rho_t$)**:
+  In `src/video_processing/cotracker_tracker.py`, we replaced frame heuristics with point velocity alignment:
+  $$\rho_t = \frac{\bar{\mathbf{v}}_{\text{hand}}(t) \cdot \bar{\mathbf{v}}_{\text{glass}}(t)}{\| \bar{\mathbf{v}}_{\text{hand}}(t) \|_2 \| \bar{\mathbf{v}}_{\text{glass}}(t) \|_2}$$
+  - **Pre-grasp phase**: Hand moves ($\bar{\mathbf{v}}_{\text{hand}} \ne \mathbf{0}$), glass stationary ($\bar{\mathbf{v}}_{\text{glass}} = \mathbf{0}$) $\implies \rho_t \approx 0$.
+  - **Grasp & Lift phase**: Clamped tumbler moves synchronously with the hand $\implies \rho_t \to +1.0$.
+  - A hysteresis latch triggers gripper closure when $\rho_t > 0.55$ within proximity $d < 0.25$.
+- **Outcome**: **PICK & PLACE: 7.2cm [SUCCESS]**! As shown in `data/cotracker_comparisons/Vid_0_ct_comparison.mp4`, the system achieved robust, fully autonomous closed-loop pick-and-place with $+7.2\text{ cm}$ sustained lift off the tabletop, creating the ground-truth demonstration dataset used to train SmolVLA.
+
+---
 
 ### 3.6 Cylinder Resizing & Workspace Relocation
+To complete the digital twin, we refined the geometry and workspace placement in `GlassLiftEnv`:
 1. **Geometry**: Resized from RoboSuite's default 80 mm cube to a slender tumbler: `GLASS_RADIUS = 0.030 m` (60 mm outer diameter, providing 10 mm clearance on each side of the 80 mm Panda jaws) and `GLASS_HALF_HEIGHT = 0.0475 m` (95 mm total height).
-2. **Workspace Positioning**: Moved the reference placement from the center of the table ($X = 0.0\text{ m}$) to the robot's reachable workspace envelope:
+2. **Workspace Positioning**: Moved the reference placement from table center ($X = 0.0\text{ m}$) to the robot's reachable workspace envelope:
    ```python
    glass_ref_pos = [self.table_offset[0] - 0.035, self.table_offset[1], self.table_offset[2]]
    ```
