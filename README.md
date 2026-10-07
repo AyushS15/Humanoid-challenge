@@ -544,15 +544,23 @@ pip install -r requirements.txt
 
 ### 1. Extract Trajectories with CoTracker3
 ```bash
+# Option A: Fast Single-Video Verification (Vid_0)
+PYTHONPATH=. python3 src/video_processing/run_cotracker_pipeline.py \
+    --video media/Vid_0.mp4 \
+    --out_dir data/cotracker_comparisons \
+    --traj_dir data/cotracker_trajectories
+
+# Option B: Batch Processing across all demonstration clips
 PYTHONPATH=. python3 src/video_processing/run_cotracker_pipeline.py \
     --input_dir media \
-    --output_dir data/processed_trajectories
+    --out_dir data/cotracker_comparisons \
+    --traj_dir data/cotracker_trajectories
 ```
 
 ### 2. Export LeRobot Dataset
 ```bash
 PYTHONPATH=. python3 src/learning/export_lerobot_dataset.py \
-    --actions_dir data/processed_trajectories \
+    --actions_dir data/cotracker_trajectories \
     --output_dir data/lerobot_dataset/glass_pick_place
 ```
 
@@ -571,7 +579,7 @@ PYTHONPATH=. python3 src/learning/train_smolvla_expert_weighted.py \
 
 ### 4. Evaluate with Horizon $K$ and Calibrated Reach
 ```bash
-# Evaluate dual-axis calibrated reach & vertical gain (γ_x = 1.80, γ_z = 1.25, K = 5) on Vid_0 (+3.84cm lift)
+# 1. Evaluate dual-axis calibrated reach & vertical gain (γ_x = 1.80, γ_z = 1.25, K = 5) on Vid_0 (+3.84cm lift)
 PYTHONPATH=. python3 src/simulation/rollout_smolvla_calibrated_reach.py \
     --video_id Vid_0 \
     --checkpoint outputs/smolvla_glass_expert \
@@ -581,15 +589,16 @@ PYTHONPATH=. python3 src/simulation/rollout_smolvla_calibrated_reach.py \
     --seed 6 \
     --steps 160
 
-# Evaluate single-axis calibrated reach (γ_x = 1.35, K = 5) on Vid_0
+# 2. Evaluate single-axis calibrated reach (γ_x = 1.35, γ_z = 1.0, K = 5) on Vid_0
 PYTHONPATH=. python3 src/simulation/rollout_smolvla_calibrated_reach.py \
     --video_id Vid_0 \
     --checkpoint outputs/smolvla_glass_expert \
     --gamma_x 1.35 \
+    --gamma_z 1.0 \
     --chunk_exec_steps 5 \
     --steps 160
 
-# Evaluate spatial-weighted checkpoint without gain
+# 3. Evaluate spatial-weighted checkpoint without gain
 PYTHONPATH=. python3 src/simulation/rollout_smolvla_weighted_eval.py \
     --video_id Vid_0 \
     --checkpoint outputs/smolvla_glass_expert_reach_weighted \

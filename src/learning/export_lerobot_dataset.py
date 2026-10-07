@@ -199,9 +199,24 @@ def build_full_dataset(
     print("[*] ===================================================")
 
     # 1. Training Set: Vid_0 and Vid_2 (100% verified pick, lift, table return)
+    def resolve_action_path(base_dir: Path, ep_id: str) -> Path:
+        cand = base_dir / f"{ep_id}_ct_actions.npz"
+        if cand.exists():
+            return cand
+        cand = base_dir / f"{ep_id}_actions.npz"
+        if cand.exists():
+            return cand
+        cand = Path("data/cotracker_trajectories") / f"{ep_id}_ct_actions.npz"
+        if cand.exists():
+            return cand
+        cand = Path("data/processed_trajectories") / f"{ep_id}_actions.npz"
+        if cand.exists():
+            return cand
+        return base_dir / f"{ep_id}_ct_actions.npz"
+
     train_sources = [
-        ("Vid_0", traj_dir / "Vid_0_ct_actions.npz"),
-        ("Vid_2", traj_dir / "Vid_2_ct_actions.npz"),
+        ("Vid_0", resolve_action_path(traj_dir, "Vid_0")),
+        ("Vid_2", resolve_action_path(traj_dir, "Vid_2")),
     ]
     train_episodes = []
     for ep_id, act_path in train_sources:
@@ -225,7 +240,7 @@ def build_full_dataset(
 
     # 2. Test Set: Vid_5 (slanted cylinder orientation testbed)
     test_sources = [
-        ("Vid_5", traj_dir / "Vid_5_ct_actions.npz"),
+        ("Vid_5", resolve_action_path(traj_dir, "Vid_5")),
     ]
     test_episodes = []
     for ep_id, act_path in test_sources:
@@ -279,8 +294,8 @@ def build_full_dataset(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Export LeRobot dataset for GlassLift")
-    parser.add_argument("--out_dir", type=str, default="data/lerobot_dataset/glass_pick_place")
-    parser.add_argument("--traj_dir", type=str, default="data/cotracker_trajectories")
+    parser.add_argument("--out_dir", "--output_dir", type=str, default="data/lerobot_dataset/glass_pick_place", help="Output dataset directory")
+    parser.add_argument("--traj_dir", "--actions_dir", type=str, default="data/cotracker_trajectories", help="Directory of input trajectory action NPZs")
     args = parser.parse_args()
 
     build_full_dataset(output_dir=args.out_dir, trajectories_dir=args.traj_dir)

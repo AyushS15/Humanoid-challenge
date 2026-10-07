@@ -163,6 +163,7 @@ def run_batch_pipeline(
     video_dir: str = "media",
     skip_videos: List[str] = ["Vid_9"],
     output_dir: str = "data/cotracker_comparisons",
+    traj_dir: str = "data/cotracker_trajectories",
 ):
     """Executes pipeline across all valid videos, skipping specified ones."""
     vdir = Path(video_dir)
@@ -176,7 +177,7 @@ def run_batch_pipeline(
     results = []
 
     for v in valid_videos:
-        m = run_single_video_pipeline(str(v), output_dir=output_dir)
+        m = run_single_video_pipeline(str(v), output_dir=output_dir, traj_dir=traj_dir)
         results.append(m)
 
     # Print summary table
@@ -205,12 +206,13 @@ def run_batch_pipeline(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run end-to-end CoTracker3 pipeline")
     parser.add_argument("--video", type=str, default=None, help="Path to single video")
-    parser.add_argument("--dir", type=str, default="media", help="Directory of videos")
+    parser.add_argument("--dir", "--input_dir", type=str, default="media", help="Directory of videos")
     parser.add_argument("--skip", nargs="+", default=["Vid_9"], help="Videos to skip")
-    parser.add_argument("--out_dir", type=str, default="data/cotracker_comparisons", help="Output directory")
+    parser.add_argument("--out_dir", "--output_dir", type=str, default="data/cotracker_comparisons", help="Output directory for comparison videos")
+    parser.add_argument("--traj_dir", type=str, default="data/cotracker_trajectories", help="Output directory for extracted trajectories")
     args = parser.parse_args()
 
     if args.video:
-        run_single_video_pipeline(args.video, output_dir=args.out_dir)
+        run_single_video_pipeline(args.video, output_dir=args.out_dir, traj_dir=args.traj_dir)
     else:
-        run_batch_pipeline(video_dir=args.dir, skip_videos=args.skip, output_dir=args.out_dir)
+        run_batch_pipeline(video_dir=args.dir, skip_videos=args.skip, output_dir=args.out_dir, traj_dir=args.traj_dir)

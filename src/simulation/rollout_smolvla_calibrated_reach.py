@@ -401,7 +401,7 @@ def main():
     parser.add_argument("--video_id", type=str, default="Vid_0", help="Video prefix (Vid_0, Vid_2)")
     parser.add_argument("--checkpoint", type=str, default="outputs/smolvla_glass_expert")
     parser.add_argument("--gamma_x", type=float, default=1.80, help="Forward reach gain multiplier")
-    parser.add_argument("--gamma_z", type=float, default=1.25, help="Vertical descent & lift gain multiplier")
+    parser.add_argument("--gamma_z", type=float, default=1.0, help="Vertical descent & lift gain multiplier (1.0 = baseline, 1.25 = augmented lift)")
     parser.add_argument("--z_descent_limit", type=float, default=0.855, help="Target minimum EEF Z height before throttling descent")
     parser.add_argument("--chunk_exec_steps", "-k", type=int, default=5, help="Action chunk execution size")
     parser.add_argument("--steps", type=int, default=160, help="Max rollout steps")
