@@ -98,7 +98,10 @@
 
 ### 2.1 MediaPipe 21-DoF Tracking & Pinch Metric
 The initial tracking pipeline (`src/video_processing/hand_tracker.py`) utilized the Google MediaPipe Tasks API to extract 21 3D hand landmarks per frame. The robot's end-effector position was retargeted from wrist displacements ($L_0$), while the binary gripper command $g_t \in \{-1.0, +1.0\}$ was derived from the Euclidean pinch distance between thumb tip ($L_4$) and index fingertip ($L_8$):
-$$d_{\text{pinch}} = \| \mathbf{p}_{L_4} - \mathbf{p}_{L_8} \|_2$$
+
+$$
+d_{\text{pinch}} = \| \mathbf{p}_{L_4} - \mathbf{p}_{L_8} \|_2
+$$
 
 ### 2.2 The Index Finger Occlusion Failure Mode
 When retargeting real-world manipulation of a 3D cylindrical tumbler, this formulation failed catastrophically:
@@ -114,7 +117,15 @@ When retargeting real-world manipulation of a 3D cylindrical tumbler, this formu
 
 ### 2.3 Failed Multi-Keypoint Heuristic Fallback
 To salvage sparse landmark tracking, we implemented a progressive joint fallback heuristic:
-$$\text{Target Point} = \begin{cases} L_8 \text{ (Index Tip)}, & \text{if visible \& displacement stable} \\ L_7 \text{ (Index DIP)}, & \text{if } L_8 \text{ jumps} > \tau \\ L_6 \text{ (Index PIP)}, & \text{if } L_7 \text{ jumps} > \tau \\ L_5 \text{ (Index MCP)}, & \text{if PIP is occluded} \end{cases}$$
+
+$$
+\text{Target Point} = \begin{cases} 
+L_8 \text{ (Index Tip)}, & \text{if visible and displacement stable} \\ 
+L_7 \text{ (Index DIP)}, & \text{if } L_8 \text{ jumps} > \tau \\ 
+L_6 \text{ (Index PIP)}, & \text{if } L_7 \text{ jumps} > \tau \\ 
+L_5 \text{ (Index MCP)}, & \text{if PIP is occluded} 
+\end{cases}
+$$
 
 <p align="center">
   <img src="media/Vid_0_cv_3_approaches_comparison.gif" width="560" alt="Comparison of 3 Hand Tracking Preprocessing Approaches" />
@@ -146,10 +157,10 @@ Below is the definitive chronological progression across the **5 developmental i
 | Iteration & Video Artifact | Key Physical Hurdle | Engineering Deduction & Fix | Simulation Outcome |
 | :--- | :--- | :--- | :--- |
 | **Iteration 1: Raw CoTracker3**<br>(`Vid_0_ct_comparison copy.mp4`) | Arm completely stationary; zero forward transit | Centroid computed without camera tilt; oversized ROI captured static table points; initial pose misaligned | Arm immobile in back (`[REPLAY]`) |
-| **Iteration 2: Pitch & ROI Fix**<br>(`Vid_0_ct_comparison copy 2.mp4`) | Arm reaches glass but cannot grip or lift | Camera tilt corrected 45° $\to$ 60°; workspace aligned; glass ROI tightened to cylinder | Arm reaches cylinder, but slips on contact |
-| **Iteration 3: Material & Friction**<br>(`Vid_0_ct_comparison copy 3.mp4`) | Object too heavy (>2.1 kg) and slick; slips off | Reduced density to hollow steel ($450\text{ kg/m}^3 \approx 120\text{g}$); boosted friction $\mu = 2.0$ | Firm contact, but gripper approaching at 45° |
-| **Iteration 4: Gripper Squaring**<br>(`Vid_0_ct_comparison copy 4.mp4`) | Diagonal 45° approach pushes glass away | Squared gripper from 45° $\to$ 0° horizontal; aligned frame-level actions | **First physical lift!** (`[LIFT SUCCESS]`) |
-| **Iteration 5: Co-Motion Latch**<br>(`Vid_0_ct_comparison.mp4`) | Frame-coded timing lacks multi-video generalization | Replaced frame heuristics with velocity co-motion correlation ($\rho_t > 0.55$) | **Autonomous Pick & Place!** (`+7.2cm [SUCCESS]`) |
+| **Iteration 2: Pitch & ROI Fix**<br>(`Vid_0_ct_comparison copy 2.mp4`) | Arm reaches glass but cannot grip or lift | Camera tilt corrected 45° → 60°; workspace aligned; glass ROI tightened to cylinder | Arm reaches cylinder, but slips on contact |
+| **Iteration 3: Material & Friction**<br>(`Vid_0_ct_comparison copy 3.mp4`) | Object too heavy (>2.1 kg) and slick; slips off | Reduced density to hollow steel (450 kg/m³, ~120g); boosted friction μ = 2.0 | Firm contact, but gripper approaching at 45° |
+| **Iteration 4: Gripper Squaring**<br>(`Vid_0_ct_comparison copy 4.mp4`) | Diagonal 45° approach pushes glass away | Squared gripper from 45° → 0° horizontal; aligned frame-level actions | **First physical lift!** (`[LIFT SUCCESS]`) |
+| **Iteration 5: Co-Motion Latch**<br>(`Vid_0_ct_comparison.mp4`) | Frame-coded timing lacks multi-video generalization | Replaced frame heuristics with velocity co-motion correlation (ρ_t > 0.55) | **Autonomous Pick & Place!** (`+7.2cm [SUCCESS]`) |
 
 ---
 
@@ -180,8 +191,15 @@ Below is the definitive chronological progression across the **5 developmental i
 
 - **Hands-On Observations & Breakthroughs**:
   1. **60° Camera Pitch Angle Correction**: We realized the real-world smartphone video was recorded from a chest mount tilted downward at approximately $60^\circ$, whereas our initial kinematic script assumed a $45^\circ$ angle. Correcting this angle in `src/retargeting/cotracker_to_panda.py` un-projected the camera-plane displacement into true horizontal tabletop transit:
-     $$v_{\text{table\_forward}} = \frac{v_{\text{reach}}}{\sin(60^\circ)}, \quad v_{\text{vertical}} = \frac{v_{\text{vertical}}}{\cos(60^\circ)}$$
-     $$\begin{bmatrix} \Delta X_{\text{robot}} \\ \Delta Y_{\text{robot}} \\ \Delta Z_{\text{robot}} \end{bmatrix} = \mathbf{S} \begin{bmatrix} v_{\text{table\_forward}} \\ -v_{\text{lateral}} \\ v_{\text{vertical}} \end{bmatrix}, \quad \mathbf{S} = \text{diag}(8.0, 8.0, 8.0)$$
+
+$$
+v_{\text{forward}} = \frac{v_{\text{reach}}}{\sin(60^\circ)}, \quad v_{\text{vertical}} = \frac{v_{\text{vertical}}}{\cos(60^\circ)}
+$$
+
+$$
+\begin{bmatrix} \Delta X_{\text{robot}} \\ \Delta Y_{\text{robot}} \\ \Delta Z_{\text{robot}} \end{bmatrix} = \mathbf{S} \begin{bmatrix} v_{\text{forward}} \\ -v_{\text{lateral}} \\ v_{\text{vertical}} \end{bmatrix}, \quad \mathbf{S} = \text{diag}(8.0, 8.0, 8.0)
+$$
+
   2. **Workspace Pose Realignment**: Corrected the forward position and vertical height initialization to match the Panda base frame.
   3. **Tightened Glass ROI**: We shrank the glass query box so that it samples points strictly on the cylindrical metallic body, excluding the table surface below:
      ```python
@@ -243,7 +261,7 @@ Below is the definitive chronological progression across the **5 developmental i
 
 ---
 
-### 3.5 Breakthrough 5: Generalized Co-Motion Latch ($\rho_t > 0.55$) (`final`) — Autonomous Pick & Place
+### 3.5 Breakthrough 5: Generalized Co-Motion Latch (ρ_t > 0.55) (final) — Autonomous Pick & Place
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter5_final_pick_place.gif" width="560" alt="Iteration 5: Final Autonomous Pick and Place" />
@@ -255,7 +273,11 @@ Below is the definitive chronological progression across the **5 developmental i
   While hardcoding actions to frame intervals proved the physical mechanics in Iteration 4, it could not generalize across multiple videos where human demonstrators moved at different speeds.
 - **Velocity Co-Motion Correlation ($\rho_t$)**:
   In `src/video_processing/cotracker_tracker.py`, we replaced frame heuristics with point velocity alignment:
-  $$\rho_t = \frac{\bar{\mathbf{v}}_{\text{hand}}(t) \cdot \bar{\mathbf{v}}_{\text{glass}}(t)}{\| \bar{\mathbf{v}}_{\text{hand}}(t) \|_2 \| \bar{\mathbf{v}}_{\text{glass}}(t) \|_2}$$
+
+$$
+\rho_t = \frac{\bar{\mathbf{v}}_{\text{hand}}(t) \cdot \bar{\mathbf{v}}_{\text{glass}}(t)}{\| \bar{\mathbf{v}}_{\text{hand}}(t) \|_2 \, \| \bar{\mathbf{v}}_{\text{glass}}(t) \|_2}
+$$
+
   - **Pre-grasp phase**: Hand moves ($\bar{\mathbf{v}}_{\text{hand}} \ne \mathbf{0}$), glass stationary ($\bar{\mathbf{v}}_{\text{glass}} = \mathbf{0}$) $\implies \rho_t \approx 0$.
   - **Grasp & Lift phase**: Clamped tumbler moves synchronously with the hand $\implies \rho_t \to +1.0$.
   - A hysteresis latch triggers gripper closure when $\rho_t > 0.55$ within proximity $d < 0.25$.
@@ -281,7 +303,11 @@ SmolVLA is an efficient 450M parameter VLA designed for fast, local robot execut
 - **Vision Backbone**: Frozen SigLIP-400M (reduced to 16 transformer layers for memory efficiency on Apple Silicon).
 - **State Projection**: Linear projection mapping 7-DoF robot proprioception into the transformer token space.
 - **Action Expert Head**: 99.88M parameter Flow-Matching transformer operating on continuous action chunks of horizon $H = 50$:
-  $$v_\theta(x_t, t, \mathbf{c}) \approx u_t$$
+
+$$
+v_\theta(x_t, t, \mathbf{c}) \approx u_t
+$$
+
   Where $u_t$ is the ground-truth velocity field driving random noise $x_0 \sim \mathcal{N}(0, \mathbf{I})$ to demonstration action chunk $a_{t:t+H}$.
 
 ```
@@ -296,13 +322,13 @@ In `src/learning/export_lerobot_dataset.py`, demonstrations are packaged into Le
 - Actions: 7-DoF OSC deltas (`(T, 7)` float32: `[dx, dy, dz, droll, dpitch, dyaw, grip]`) zero-padded to 32 dimensions.
 
 Using `src/learning/probe_encoder_features.py`, we verified visual alignment:
-- Cosine similarity between initial and contact frames: $0.781$.
+- Cosine similarity between initial and contact frames: 0.781.
 - Frozen SigLIP features reliably distinguish pre-grasp from clamped lift states without requiring full vision backbone fine-tuning.
 
 ### 4.3 Language Conditioning & Prompt Sensitivity
 In `src/learning/eval_smolvla_prompt_ablation.py`, we benchmarked prompt sensitivity:
 - Default prompt: `"approach the glass on the table and grasp the cylinder and lift the cylinder and then bring down the cylinder to the table and then withdraw your hands"`
-- Flow-matching generation variance under paraphrased instructions was $< 4.2\%$, confirming robust multimodal grounding.
+- Flow-matching generation variance under paraphrased instructions was < 4.2%, confirming robust multimodal grounding.
 
 ---
 
@@ -312,21 +338,21 @@ Below is the definitive chronological benchmark across every developmental phase
 
 ### Summary Benchmark Table
 
-| Visual Animated Preview | Phase & Milestone | Horizon ($K$) | Forward Gain ($\gamma_x$) | Max Reach $X$ | Cylinder Distance | Lowest EEF $Z$ | Net Glass Lift | Outcome & Behavioral Observation | Direct Video Artifact Link |
+| Visual Animated Preview | Phase & Milestone | Horizon (K) | Forward Gain (γ_x) | Max Reach X | Cylinder Distance | Lowest EEF Z | Net Glass Lift | Outcome & Behavioral Observation | Direct Video Artifact Link |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_zero_shot_side_by_side.gif" width="140" alt="Phase 1 Zero-Shot" /></a> | **Phase 1: Zero-Shot Baseline** | $K=5$ | $\gamma_x=1.0$ | $-0.103\text{ m}$ | $> 12.0\text{ cm}$ | $1.011\text{ m}$ | $0.00\text{ cm}$ | Aloha/SO-100 pretraining mismatch; arm rises toward ceiling ($Z = 2.13\text{ m}$). | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_tri_panel_comparison.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_baseline_finetuned_side_by_side.gif" width="140" alt="Phase 2 Fine-Tuned" /></a> | **Phase 2: Baseline Fine-Tuning** | $K=5$ | $\gamma_x=1.0$ | $-0.0692\text{ m}$ | $3.43\text{ cm}$ | $0.8578\text{ m}$ | $0.00\text{ cm}$ | Learns reach & descent, but under-reaches by $3.4\text{ cm}$ and clamps empty air. | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_tri_panel_comparison.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K1.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k1.gif" width="140" alt="Phase 3 K=1" /></a> | **Phase 3: Horizon $K=1$ Ablation** | $K=1$ | $\gamma_x=1.0$ | $-0.0761\text{ m}$ | $4.61\text{ cm}$ | $0.8612\text{ m}$ | $0.00\text{ cm}$ | 8.74 FPS; re-sampling every step causes severe flow-matching stochastic chatter. | [$K=1$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K1.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K2.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k2.gif" width="140" alt="Phase 3 K=2" /></a> | **Phase 3: Horizon $K=2$ Ablation** | $K=2$ | $\gamma_x=1.0$ | $-0.0712\text{ m}$ | $3.89\text{ cm}$ | $0.8590\text{ m}$ | $0.00\text{ cm}$ | 16.52 FPS; moderate responsiveness, slight under-reaching. | [$K=2$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K2.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K5.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k5.gif" width="140" alt="Phase 3 K=5" /></a> | **Phase 3: Horizon $K=5$ Ablation** | **$K=5$** | $\gamma_x=1.0$ | **$-0.0652\text{ m}$** | **$3.36\text{ cm}$** | $0.8578\text{ m}$ | $0.00\text{ cm}$ | **37.33 FPS; Optimal sweet spot: smooth momentum + 4 Hz visual closed-loop feedback.** | [$K=5$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K5.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K10.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k10.gif" width="140" alt="Phase 3 K=10" /></a> | **Phase 3: Horizon $K=10$ Ablation** | $K=10$ | $\gamma_x=1.0$ | $-0.0701\text{ m}$ | $4.16\text{ cm}$ | $0.8584\text{ m}$ | $0.00\text{ cm}$ | 58.29 FPS; 0.5s open-loop execution accumulates drift, degrading precision. | [$K=10$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K10.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25.gif" width="140" alt="Phase 4 gx=1.25" /></a> | **Phase 4: Calibrated Reach ($\gamma_x=1.25$)** | $K=5$ | $\gamma_x=1.25$ | $-0.0332\text{ m}$ | $3.39\text{ cm}$ | $0.9065\text{ m}$ | $0.00\text{ cm}$ | Reaches cylinder $X$, but descent stalls at $Z=0.906\text{ m}$; clamps top rim. | [$\gamma_x=1.25$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_calibrated_reach_side_by_side.gif" width="140" alt="Phase 4 gx=1.35" /></a> | **Phase 4: Calibrated Reach ($\gamma_x=1.35$)** | **$K=5$** | **$\gamma_x=1.35$** | **$-0.0405\text{ m}$** | **$2.2\text{ mm}$** | **$0.8601\text{ m}$** | **$+0.70\text{ cm}$** | **Exact match to demo; pads align with cylinder and physically lift it for 12 steps.** | [$\gamma_x=1.35$ Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4)<br>[$\gamma_x=1.35$ Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_tri_panel_comparison.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60.gif" width="140" alt="Phase 4 gx=1.60" /></a> | **Phase 4: Calibrated Reach ($\gamma_x=1.60$)** | $K=5$ | $\gamma_x=1.60$ | $-0.0301\text{ m}$ | $5.1\text{ mm}$ | $0.8590\text{ m}$ | $+0.42\text{ cm}$ | Higher forward momentum; slight table vibration before lift. | [$\gamma_x=1.60$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25.gif" width="140" alt="Phase 4 Dual-Axis gx=1.80 gz=1.25" /></a> | **Phase 4: Dual-Axis Grasp & Lift ($\gamma_x=1.80, \gamma_z=1.25$)** | **$K=5$** | **$\gamma_x=1.80, \gamma_z=1.25$** | **$-0.0419\text{ m}$** | **$1.18\text{ cm}$** | **$0.8869\text{ m}$** | **$+3.84\text{ cm}$** | **Dual-axis breakthrough: forward reach + accelerated descent brings fingers past rim to tumbler body, achieving $+3.84\text{ cm}$ sustained lift.** | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_tri_panel_comparison.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4"><img src="data/smolvla_comparisons/Vid_0_spatial_weighted_comparison.gif" width="140" alt="Phase 5 Reweighted" /></a> | **Phase 5: Spatial Loss Reweighting** | $K=5$ | $\gamma_x=1.0$ | $-0.0646\text{ m}$ | $3.09\text{ cm}$ | $0.8906\text{ m}$ | $0.00\text{ cm}$ | Training $X$-loss drops by $97.2\%$, but early hover drift throttles closed-loop forward reach. | [3-Way Comparison Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_zero_shot_side_by_side.gif" width="140" alt="Phase 1 Zero-Shot" /></a> | **Phase 1: Zero-Shot Baseline** | K = 5 | γ_x = 1.0 | -0.103 m | > 12.0 cm | 1.011 m | 0.00 cm | Aloha/SO-100 pretraining mismatch; arm rises toward ceiling ($Z = 2.13\text{ m}$). | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_zero_shot_tri_panel_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_baseline_finetuned_side_by_side.gif" width="140" alt="Phase 2 Fine-Tuned" /></a> | **Phase 2: Baseline Fine-Tuning** | K = 5 | γ_x = 1.0 | -0.0692 m | 3.43 cm | 0.8578 m | 0.00 cm | Learns reach & descent, but under-reaches by 3.4 cm and clamps empty air. | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_finetuned_tri_panel_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K1.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k1.gif" width="140" alt="Phase 3 K=1" /></a> | **Phase 3: Horizon K=1 Ablation** | K = 1 | γ_x = 1.0 | -0.0761 m | 4.61 cm | 0.8612 m | 0.00 cm | 8.74 FPS; re-sampling every step causes severe flow-matching stochastic chatter. | [$K=1$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K1.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K2.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k2.gif" width="140" alt="Phase 3 K=2" /></a> | **Phase 3: Horizon K=2 Ablation** | K = 2 | γ_x = 1.0 | -0.0712 m | 3.89 cm | 0.8590 m | 0.00 cm | 16.52 FPS; moderate responsiveness, slight under-reaching. | [$K=2$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K2.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K5.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k5.gif" width="140" alt="Phase 3 K=5" /></a> | **Phase 3: Horizon K=5 Ablation** | **K = 5** | γ_x = 1.0 | **-0.0652 m** | **3.36 cm** | 0.8578 m | 0.00 cm | **37.33 FPS; Optimal sweet spot: smooth momentum + 4 Hz visual closed-loop feedback.** | [$K=5$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K5.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K10.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_k_ablation_k10.gif" width="140" alt="Phase 3 K=10" /></a> | **Phase 3: Horizon K=10 Ablation** | K = 10 | γ_x = 1.0 | -0.0701 m | 4.16 cm | 0.8584 m | 0.00 cm | 58.29 FPS; 0.5s open-loop execution accumulates drift, degrading precision. | [$K=10$ Ablation Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_k_ablation_K10.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25.gif" width="140" alt="Phase 4 gx=1.25" /></a> | **Phase 4: Calibrated Reach (γ_x=1.25)** | K = 5 | γ_x = 1.25 | -0.0332 m | 3.39 cm | 0.9065 m | 0.00 cm | Reaches cylinder X, but descent stalls at $Z=0.9065\text{ m}$; clamps top rim. | [$\gamma_x=1.25$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_calibrated_reach_side_by_side.gif" width="140" alt="Phase 4 gx=1.35" /></a> | **Phase 4: Calibrated Reach (γ_x=1.35)** | **K = 5** | **γ_x = 1.35** | **-0.0405 m** | **2.2 mm** | **0.8601 m** | **+0.70 cm** | **Exact match to demo; pads align with cylinder and physically lift it for 12 steps.** | [$\gamma_x=1.35$ Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4)<br>[$\gamma_x=1.35$ Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_tri_panel_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60.gif" width="140" alt="Phase 4 gx=1.60" /></a> | **Phase 4: Calibrated Reach (γ_x=1.60)** | K = 5 | γ_x = 1.60 | -0.0301 m | 5.1 mm | 0.8590 m | +0.42 cm | Higher forward momentum; slight table vibration before lift. | [$\gamma_x=1.60$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25.gif" width="140" alt="Phase 4 Dual-Axis gx=1.80 gz=1.25" /></a> | **Phase 4: Dual-Axis Grasp & Lift (γ_x=1.80, γ_z=1.25)** | **K = 5** | **γ_x = 1.80, γ_z = 1.25** | **-0.0419 m** | **1.18 cm** | **0.8869 m** | **+3.84 cm** | **Dual-axis breakthrough: forward reach + accelerated descent brings fingers past rim to tumbler body, achieving +3.84 cm sustained lift.** | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_tri_panel_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4"><img src="data/smolvla_comparisons/Vid_0_spatial_weighted_comparison.gif" width="140" alt="Phase 5 Reweighted" /></a> | **Phase 5: Spatial Loss Reweighting** | K = 5 | γ_x = 1.0 | -0.0646 m | 3.09 cm | 0.8906 m | 0.00 cm | Training X-loss drops by 97.2%, but early hover drift throttles closed-loop forward reach. | [3-Way Comparison Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4) |
 
-*(Note: On demonstration clip `Vid_2`, $\gamma_x = 1.35$ achieved a sustained tabletop lift of **$+2.74\text{ cm}$**:)*
+*(Note: On demonstration clip `Vid_2`, $\gamma_x = 1.35$ achieved a sustained tabletop lift of **+2.74 cm**:)*
 
 <p align="center">
   <img src="data/smolvla_comparisons/Vid_2_calibrated_reach_side_by_side.gif" width="560" alt="Vid_2 Calibrated Reach Sustained Lift" />
@@ -360,7 +386,7 @@ Below is the definitive chronological benchmark across every developmental phase
 
 ---
 
-### 5.3 Phase 3: Chunk Execution Horizon ($K$) Ablation Study
+#### 5.3 Phase 3: Chunk Execution Horizon (K) Ablation Study
 
 <p align="center">
   <img src="data/smolvla_comparisons/Vid_0_k_ablation_k1_vs_k5.gif" width="560" alt="Phase 3: Horizon K Ablation" />
@@ -369,13 +395,13 @@ Below is the definitive chronological benchmark across every developmental phase
 </p>
 
 - **Analysis**: We benchmarked the replanning horizon $K \in [1, 2, 5, 10]$:
-  - **$K = 1$**: Running flow-matching denoising (10 ODE steps) at every single simulation step creates high-frequency stochastic jitter/chatter that kills forward momentum.
-  - **$K = 5$ (Sweet Spot)**: Executing 5 steps ($0.25\text{s}$) per plan provides the optimal balance: the controller builds smooth physical momentum while receiving closed-loop visual feedback at 4 Hz.
-  - **$K = 10$**: Executing 10 steps ($0.5\text{s}$) open-loop accumulates drift across the longer window, degrading positioning precision.
+  - **K = 1**: Running flow-matching denoising (10 ODE steps) at every single simulation step creates high-frequency stochastic jitter/chatter that kills forward momentum.
+  - **K = 5 (Sweet Spot)**: Executing 5 steps (0.25s) per plan provides the optimal balance: the controller builds smooth physical momentum while receiving closed-loop visual feedback at 4 Hz.
+  - **K = 10**: Executing 10 steps (0.5s) open-loop accumulates drift across the longer window, degrading positioning precision.
 
 ---
 
-### 5.4 Phase 4: Calibrated Reach & Vertical Gain ($\gamma_x \approx 1.80, \gamma_z > 1.0$) — Achieving Robust Physical Grasp & +3.84cm Lift
+### 5.4 Phase 4: Calibrated Reach & Vertical Gain (γ_x ≈ 1.80, γ_z > 1.0) — Achieving Robust Physical Grasp & +3.84cm Lift
 
 <p align="center">
   <img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25.gif" width="560" alt="Phase 4 Dual-Axis Calibrated Grasp and Lift (+3.84cm)" />
@@ -389,12 +415,12 @@ Below is the definitive chronological benchmark across every developmental phase
   <em><b>Phase 4 Single-Axis Forward Gain (γ_x = 1.35)</b>: Initial forward-only scaling enabled gripper to reach cylinder X, achieving +0.70cm lift on Vid_0 and +2.74cm on Vid_2.</em>
 </p>
 
-- **The Limitation of Single-Axis Scaling ($\gamma_x$ only)**: While scaling forward velocity ($\gamma_x = 1.35$) successfully bridged the $3\text{ cm}$ horizontal under-reach shortfall, vertical descent stalled at $Z = 0.9065\text{ m}$. Because the $9.5\text{ cm}$ tall tumbler has its center of mass at $Z = 0.8575\text{ m}$ (with top rim at $Z = 0.9050\text{ m}$), closing fingers at $Z = 0.9065\text{ m}$ caused the rubber pads to clamp only the very top rim of the cylinder. With minimal contact surface area, the tumbler was prone to slipping out during upward acceleration, yielding only $+0.70\text{ cm}$ of lift.
+- **The Limitation of Single-Axis Scaling ($\gamma_x$ only)**: While scaling forward velocity ($\gamma_x = 1.35$) successfully bridged the $3\text{ cm}$ horizontal under-reach shortfall, vertical descent stalled at $Z = 0.9065\text{ m}$. Because the $9.5\text{ cm}$ tall tumbler has its center of mass at $Z = 0.8575\text{ m}$ (with top rim at $Z = 0.9050\text{ m}$), closing fingers at $Z = 0.9065\text{ m}$ caused the rubber pads to clamp only the very top rim of the cylinder. With minimal contact surface area, the tumbler was prone to slipping out during upward acceleration, yielding only +0.70 cm of lift.
 - **The Dual-Axis Solution ($\gamma_x = 1.80, \gamma_z = 1.25$)**:
   1. **Accelerated Descent Phase ($a_{\text{grip}} < 0.2, \Delta Z < 0.0$)**: While approaching with an open gripper, downward velocity is scaled by $\gamma_z = 1.25$ until the end-effector reaches $Z \le 0.855\text{ m}$. This drives the gripper fingers past the rim directly into the cylindrical sweet spot centered around the tumbler's center of mass.
   2. **High-Authority Forward Reach ($a_{\text{grip}} < 0.2, \Delta X > 0.0$)**: Scaling by $\gamma_x = 1.80$ eliminates transit lag, driving the gripper to $X = -0.0419\text{ m}$ ($1.18\text{ cm}$ cylinder offset) precisely as the grasp reflex activates.
   3. **Amplified Vertical Lift Phase ($a_{\text{grip}} \ge 0.0, \Delta Z > 0.0$)**: Once the gripper clamps the cylinder walls, vertical gain ($\gamma_z = 1.25$) amplifies upward lift velocity against gravity.
-- **Empirical Breakthrough**: Across 160 rollout steps, the Franka Panda cleanly lifts the tumbler **$+3.84\text{ cm}$** off the table ($+1.91\text{ cm}$ final height), firmly maintains the grasp throughout the trajectory, and lowers it back toward the tabletop—fulfilling the entire multi-phase demonstration cycle with high physical stability.
+- **Empirical Breakthrough**: Across 160 rollout steps, the Franka Panda cleanly lifts the tumbler **+3.84 cm** off the table (+1.91 cm final height), firmly maintains the grasp throughout the trajectory, and lowers it back toward the tabletop—fulfilling the entire multi-phase demonstration cycle with high physical stability.
 
 ---
 
@@ -406,56 +432,73 @@ Below is the definitive chronological benchmark across every developmental phase
   <em><b>Phase 5 Spatial-Weighted Fine-Tuning</b>: Left: Real human demo | Center: Baseline unweighted expert | Right: Spatial-weighted expert (Wx=5.0, Wz=4.0). Training X-loss drops 97.2%, but early hover drift causes closed-loop self-throttling.</em>
 </p>
 
-- **Analysis**: Rather than relying on inference-time velocity scaling, we fine-tuned the model natively by allocating **$66.6\%$ of the gradient capacity to spatial position** ($W_x = 5.0, W_z = 4.0$). While training $X$-loss dropped by $97.2\%$ ($0.267 \to 0.0076$), closed-loop rollout revealed the early hover-phase drift phenomenon, demonstrating the fundamental limit of uniform imitation learning on few demonstrations.
-
----
+- **Analysis**: Rather than relying on inference-time velocity scaling, we fine-tuned the model natively by allocating **66.6% of the gradient capacity to spatial position** ($W_x = 5.0, W_z = 4.0$). While training X-loss dropped by 97.2% ($0.267 \to 0.0076$), closed-loop rollout revealed the early hover-phase drift phenomenon, demonstrating the fundamental limit of uniform imitation learning on few demonstrations.
 
 ---
 
 ## 6. Part V: Scientific Introspection: Limits of Few-Shot Imitation Learning
 
-Why did reweighting the training loss with $W_x = 5.0$ (37.0% gradient allocation) and $W_z = 4.0$ (29.6% gradient allocation) drastically reduce training loss by $97.2\%$ ($0.267 \to 0.0076$), yet in closed-loop rollout only yield a minor $+4.6\text{ mm}$ forward gain, leaving the arm $\approx 2.9\text{ cm}$ short of the cylinder?
+Why did reweighting the training loss with $W_x = 5.0$ (37.0% gradient allocation) and $W_z = 4.0$ (29.6% gradient allocation) drastically reduce training loss by 97.2% ($0.267 \to 0.0076$), yet in closed-loop rollout only yield a minor +4.6 mm forward gain, leaving the arm ~2.9 cm short of the cylinder?
 
 Our step-by-step diagnostic analysis revealed three fundamental mathematical barriers:
 
 ### 6.1 Uniform Temporal Averaging vs Critical Contact Transitions
 In flow-matching behavioral cloning, the loss function:
-$$\mathcal{L}_{FM} = \mathbb{E}_{t, x_0, \mathbf{c}} \left[ \frac{1}{H} \sum_{k=0}^{H-1} \sum_{d=0}^{D-1} W_d \cdot \| u_{k, d} - v_\theta(x_{t, k}, t, \mathbf{c})_d \|^2 \right]$$
+
+$$
+\mathcal{L}_{\text{FM}} = \mathbb{E}_{t, x_0, \mathbf{c}} \left[ \frac{1}{H} \sum_{k=0}^{H-1} \sum_{d=0}^{D-1} W_d \cdot \| u_{k, d} - v_\theta(x_{t, k}, t, \mathbf{c})_d \|^2 \right]
+$$
+
 averages errors uniformly across all timesteps $t \in [0, T]$ and chunk horizons $k \in [0, H]$.
 However, a physical manipulation episode is **non-uniform**:
-- **Hover Phase ($t \in [0, 30]$)**: The arm sits statically in the air ($80\%$ of frames have zero or near-zero displacement).
+- **Hover Phase ($t \in [0, 30]$)**: The arm sits statically in the air (80% of frames have zero or near-zero displacement).
 - **Critical Reaching Phase ($t \in [45, 80]$)**: High-velocity spatial transit where spatial alignment is determined.
 - **Contact & Latch Phase ($t \in [85, 95]$)**: Millimeter-level precision where contact determines success or failure.
 
-Because $80\%$ of frames belong to static or unconstrained transit, optimizing an episode-wide loss heavily rewards fitting the static regimes, while the high-precision contact boundaries are under-represented.
+Because 80% of frames belong to static or unconstrained transit, optimizing an episode-wide loss heavily rewards fitting the static regimes, while the high-precision contact boundaries are under-represented.
 
 ### 6.2 The Hover-Phase Drift Discovery (Steps 0–30)
 In the demonstration dataset (`Vid_0_episode.npz`), the human hand is stationary during the first 30 frames:
-$$\text{GT } \Delta X_{t \in [0, 30]} = 0.000$$
+
+$$
+\text{GT } \Delta X_{t \in [0, 30]} = 0.000
+$$
+
 However, during closed-loop rollout, flow-matching sampling noise outputs a tiny residual forward velocity:
-$$\text{Model } \Delta X_{t \in [0, 30]} \approx +0.03 \text{ to } +0.10$$
+
+$$
+\text{Model } \Delta X_{t \in [0, 30]} \approx +0.03 \text{ to } +0.10
+$$
+
 Over 30 simulation steps at 20 Hz, this tiny residual causes the robot to **creep forward prematurely**. By step 45, the robot end-effector is already at:
-$$X_{\text{rollout}} = -0.064\text{ m} \quad (\text{Demonstration GT at step 45 was } X = -0.086\text{ m})$$
+
+$$
+X_{\text{rollout}} = -0.064\text{ m} \quad (\text{Demonstration GT at step 45 was } X = -0.086\text{ m})
+$$
 
 ### 6.3 Closed-Loop Covariate Shift & Self-Throttling (Steps 45–80)
 When the active reaching phase begins ($t \in [45, 80]$), the demonstrator accelerates forward ($\text{GT } \Delta X = +0.075$).
 However, the rollout policy's inputs tell a different story:
 1. **Visual Conditioning**: The agentview camera shows the cylinder is already visually close.
-2. **Proprioceptive Conditioning**: The state vector says $X = -0.064\text{ m}$ (already $2.2\text{ cm}$ ahead of where the demonstrator was at frame 45).
+2. **Proprioceptive Conditioning**: The state vector says $X = -0.064\text{ m}$ (already 2.2 cm ahead of where the demonstrator was at frame 45).
 3. **The Self-Throttling Response**: The policy interprets its advanced position as an **overshoot** relative to the visual scene schedule! To correct this perceived error, the policy **actively throttles its forward velocity to zero or negative**:
-   $$\text{Predicted } \Delta X_{t=50} = -0.095, \quad \Delta X_{t=55} = -0.009, \quad \Delta X_{t=65} = -0.014$$
+
+$$
+\text{Predicted } \Delta X_{t=50} = -0.095, \quad \Delta X_{t=55} = -0.009, \quad \Delta X_{t=65} = -0.014
+$$
+
 The robot literally brakes and pulls backward, stalling at $X = -0.0646\text{ m}$ right before reaching the cylinder ($X = -0.0350\text{ m}$).
 
 ### 6.4 Signal-to-Noise Mismatch Across Action Channels
 In `GlassDemonstrationDataset`, the action dimensions have vastly different variances:
-- $\Delta X$: $\mu = 0.005$, $\sigma = \mathbf{0.049}$ (total transit is only $6.2\text{ cm}$)
-- $\Delta Z$: $\mu = -0.026$, $\sigma = \mathbf{0.204}$ ($4\times$ higher variance)
-- $\Delta \text{Grip}$: operates at $\pm 1.0$, $\sigma = \mathbf{0.875}$ ($18\times$ higher variance)
+- $\Delta X$: $\mu = 0.005$, $\sigma = 0.049$ (total transit is only 6.2 cm)
+- $\Delta Z$: $\mu = -0.026$, $\sigma = 0.204$ (4× higher variance)
+- $\Delta \text{Grip}$: operates at $\pm 1.0$, $\sigma = 0.875$ (18× higher variance)
 
-In few-shot learning (2 demonstration episodes), diffusion and flow-matching heads suffer from **regression-to-the-mean** on small-amplitude signals. The model collapses low-variance channels toward their empirical mean ($\approx 0$), muting forward velocity by $50\%$.
+In few-shot learning (2 demonstration episodes), diffusion and flow-matching heads suffer from **regression-to-the-mean** on small-amplitude signals. The model collapses low-variance channels toward their empirical mean ($\approx 0$), muting forward velocity by 50%.
 
 ### 6.5 Third-Person Optical Foreshortening & Parallax
-In third-person `agentview`, the camera looks along a diagonal axis. Forward motion along the tabletop plane ($X$) creates minimal optical expansion compared to vertical lift ($Z$). Without a wrist camera, the model lacks depth looming cues to judge whether the fingertips are $3\text{ cm}$ or $0.5\text{ cm}$ from the glass.
+In third-person `agentview`, the camera looks along a diagonal axis. Forward motion along the tabletop plane ($X$) creates minimal optical expansion compared to vertical lift ($Z$). Without a wrist camera, the model lacks depth looming cues to judge whether the fingertips are 3 cm or 0.5 cm from the glass.
 
 ---
 
@@ -473,7 +516,7 @@ During initial rollout evaluations on macOS, visual comparisons exhibited severe
    ```
 2. On Apple Silicon, Unified Memory (UMA) shares physical DRAM pages between PyTorch Metal shaders and the macOS CGL OpenGL offscreen rendering context used by MuJoCo.
 3. Invoking `torch.mps.empty_cache()` inside the simulation loop forced the Metal driver to unmap and purge GPU page tables. Because MuJoCo's CGL context was holding offscreen framebuffers in the same address space, the Metal driver corrupted MuJoCo's framebuffer allocations.
-4. **The Fix**: Removing `torch.mps.empty_cache()` inside the rollout loop completely eliminated the issue. Across all 160 frames of Vid_0 and 200 frames of Vid_2, zero dark or corrupt frames occurred, maintaining an average pixel brightness of $215$ with 100% crystal-clear offscreen rendering.
+4. **The Fix**: Removing `torch.mps.empty_cache()` inside the rollout loop completely eliminated the issue. Across all 160 frames of Vid_0 and 200 frames of Vid_2, zero dark or corrupt frames occurred, maintaining an average pixel brightness of 215 with 100% crystal-clear offscreen rendering.
 
 ---
 
@@ -482,9 +525,13 @@ During initial rollout evaluations on macOS, visual comparisons exhibited severe
 To surpass few-shot imitation learning shortfalls without collecting hundreds of physical demonstrations:
 
 1. **Per-Channel $[-1, 1]$ Action Space Normalization**: Standardize each action dimension independently:
-   $$a_{\text{norm}, d} = 2 \cdot \frac{a_d - \min(a_d)}{\max(a_d) - \min(a_d)} - 1.0$$
+
+$$
+a_{\text{norm}, d} = 2 \cdot \frac{a_d - \min(a_d)}{\max(a_d) - \min(a_d)} - 1.0
+$$
+
    This allocates the flow head's full dynamic range to $\Delta X$, eliminating small-velocity regression-to-the-mean.
-2. **Simulation DAgger / DART Recovery Perturbations**: In `GlassLiftEnv`, replay expert trajectories while injecting random displacements ($\delta x, \delta y \sim \mathcal{N}(0, 0.02\text{ m})$). Use closed-loop IK to compute corrective actions back to the cylinder, generating 100 synthetic recovery demonstrations in minutes.
+2. **Simulation DAgger / DART Recovery Perturbations**: In `GlassLiftEnv`, replay expert trajectories while injecting random displacements ($\delta x, \delta y \sim \mathcal{N}(0, 0.02)$). Use closed-loop IK to compute corrective actions back to the cylinder, generating 100 synthetic recovery demonstrations in minutes.
 3. **Eye-in-Hand (Wrist Camera) Conditioning**: Add Panda's `robot0_eye_in_hand` camera to provide visual looming optical flow right before contact.
 4. **Hybrid Guarded Action Execution**: Decouple gripper closure from fixed timesteps; guard clamping until end-effector proximity $d_{xy} \le 1.5\text{ cm}$ is physically achieved.
 
@@ -577,7 +624,7 @@ PYTHONPATH=. python3 src/learning/train_smolvla_expert_weighted.py \
     --w_grip 2.0
 ```
 
-### 4. Evaluate with Horizon $K$ and Calibrated Reach
+### 4. Evaluate with Horizon K and Calibrated Reach
 ```bash
 # 1. Evaluate dual-axis calibrated reach & vertical gain (γ_x = 1.80, γ_z = 1.25, K = 5) on Vid_0 (+3.84cm lift)
 PYTHONPATH=. python3 src/simulation/rollout_smolvla_calibrated_reach.py \
