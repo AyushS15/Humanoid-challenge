@@ -82,42 +82,60 @@ def load_smolvla_model(device: torch.device, checkpoint_path: Optional[str] = No
 def apply_calibrated_reach(
     action: np.ndarray,
     current_eef_pos: np.ndarray,
-    gamma_x: float = 1.6,
+    gamma_x: float = 1.80,
+    gamma_z: float = 1.25,
     x_target_limit: float = -0.035,
+    z_descent_limit: float = 0.855,
 ) -> np.ndarray:
     """
-    Applies calibrated forward reach gain on action delta.
+    Applies calibrated forward reach and vertical gain on action delta.
     
-    Conditions for applying gamma_x:
-      1. Gripper is open (action[6] < 0.2), meaning we are in approach/descent phase.
-      2. Action commands forward translation (action[0] > 0.0).
-      3. EEF has not yet reached cylinder front boundary (current_eef_pos[0] < x_target_limit).
+    1. Forward Reach Calibration (gamma_x):
+       - Applied during approach (gripper open: action[6] < 0.2)
+       - Action commands forward translation (action[0] > 0.0)
+       - EEF has not yet reached cylinder front boundary (current_eef_pos[0] < x_target_limit).
+    
+    2. Vertical Gain Calibration (gamma_z):
+       - Descent phase: gripper open (action[6] < 0.2) and action commands downward descent (action[2] < 0.0)
+         and EEF is above grasp height target (current_eef_pos[2] > z_descent_limit)
+         -> Accelerates descent so gripper fingers surround cylinder center rather than top lip.
+       - Lift phase: gripper is closed/clamping (action[6] >= 0.0) and action commands upward lift (action[2] > 0.0)
+         -> Accelerates upward lift momentum to raise cylinder off tabletop.
     """
     act = action.copy()
     is_approach = act[6] < 0.2
     is_moving_forward = act[0] > 0.0
     behind_target = current_eef_pos[0] < x_target_limit
 
+    # Forward reach gain
     if is_approach and is_moving_forward and behind_target:
-        # Scale forward delta proportionally
         act[0] = np.clip(act[0] * gamma_x, -1.0, 1.0)
+
+    # Vertical descent gain
+    if is_approach and act[2] < 0.0 and current_eef_pos[2] > z_descent_limit:
+        act[2] = np.clip(act[2] * gamma_z, -1.0, 1.0)
+    # Vertical lift gain
+    elif act[6] >= 0.0 and act[2] > 0.0:
+        act[2] = np.clip(act[2] * gamma_z, -1.0, 1.0)
     
     return np.clip(act, -1.0, 1.0)
 
 
 def run_calibrated_rollout(
     policy: SmolVLAPolicy,
-    gamma_x: float = 1.6,
+    gamma_x: float = 1.80,
+    gamma_z: float = 1.25,
+    z_descent_limit: float = 0.855,
     task_prompt: str = DEFAULT_TASK_PROMPT,
     max_steps: int = 160,
     chunk_exec_steps: int = 5,
     device: Optional[torch.device] = None,
 ) -> Dict[str, Any]:
-    """Executes closed-loop simulation rollout with calibrated forward reach."""
+    """Executes closed-loop simulation rollout with calibrated forward reach and vertical gain."""
     if device is None:
         device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
-    print(f"[*] Starting GlassLiftEnv Calibrated Rollout (gamma_x={gamma_x:.2f}, K={chunk_exec_steps}, max_steps={max_steps})...")
+    print(f"[*] Starting GlassLiftEnv Calibrated Rollout (gamma_x={gamma_x:.2f}, gamma_z={gamma_z:.2f}, K={chunk_exec_steps}, max_steps={max_steps})...")
 
     tokens = policy.language_tokenizer(
         [task_prompt + "\n"],
@@ -200,7 +218,9 @@ def run_calibrated_rollout(
             action=raw_act,
             current_eef_pos=eef_pos,
             gamma_x=gamma_x,
+            gamma_z=gamma_z,
             x_target_limit=float(cyl_pos[0]),
+            z_descent_limit=z_descent_limit,
         )
         actions_executed.append(calibrated_act)
 
@@ -211,6 +231,7 @@ def run_calibrated_rollout(
 
     net_lift = max(0.0, max_glass_z - init_glass_z)
     final_glass_z = glass_z_positions[-1]
+    final_lift = max(0.0, final_glass_z - init_glass_z)
     success = (net_lift >= 0.05)
     min_d_xy = min(d_xy_distances)
     max_x = max(pos[0] for pos in eef_positions)
@@ -218,6 +239,7 @@ def run_calibrated_rollout(
 
     print(f"[+] Rollout Completed:")
     print(f"    Max Glass Lift: {net_lift*100:.2f} cm (Success: {success})")
+    print(f"    Final Glass Lift: {final_lift*100:.2f} cm")
     print(f"    Min d_xy to cylinder: {min_d_xy*100:.2f} cm")
     print(f"    Max forward reach X: {max_x:.4f} m (Cylinder center: {cyl_init_pos[0]:.4f} m)")
     print(f"    Lowest EEF height Z: {lowest_z:.4f} m")
@@ -228,6 +250,7 @@ def run_calibrated_rollout(
         "eef_positions": np.array(eef_positions, dtype=np.float32),
         "glass_z": np.array(glass_z_positions, dtype=np.float32),
         "max_lift_cm": float(net_lift * 100.0),
+        "final_lift_cm": float(final_lift * 100.0),
         "success": bool(success),
         "min_d_xy_cm": float(min_d_xy * 100.0),
         "max_reach_x_m": float(max_x),
@@ -235,6 +258,7 @@ def run_calibrated_rollout(
         "final_z": float(final_glass_z),
         "init_z": float(init_glass_z),
         "gamma_x": float(gamma_x),
+        "gamma_z": float(gamma_z),
         "k_steps": int(chunk_exec_steps),
     }
 
@@ -253,6 +277,7 @@ def generate_comparison_videos(
     smol_frames = rollout_data["sim_frames"]
     glass_zs = rollout_data["glass_z"]
     gamma_x = rollout_data["gamma_x"]
+    gamma_z = rollout_data.get("gamma_z", 1.0)
     k_steps = rollout_data["k_steps"]
     max_lift_cm = rollout_data["max_lift_cm"]
     T_smol = len(smol_frames)
@@ -291,12 +316,16 @@ def generate_comparison_videos(
 
     fourcc = cv2.VideoWriter_fourcc(*"avc1")
     gx_str = f"{gamma_x:.2f}".replace(".", "p")
+    gz_str = f"_gz{gamma_z:.2f}".replace(".", "p") if abs(gamma_z - 1.0) > 1e-3 else ""
 
     # --- Video 1: 2-Way Comparison (512x256) ---
-    vid_2way_path = out_dir / f"{prefix}_smolvla_calibrated_gx{gx_str}_k{k_steps}_side_by_side.mp4"
+    vid_2way_path = out_dir / f"{prefix}_smolvla_calibrated_gx{gx_str}{gz_str}_k{k_steps}_side_by_side.mp4"
     writer_2way = cv2.VideoWriter(str(vid_2way_path), fourcc, 20.0, (512, 256))
 
-    policy_label = f"SmolVLA Reach (gx={gamma_x:.1f}, K={k_steps})"
+    if abs(gamma_z - 1.0) > 1e-3:
+        policy_label = f"SmolVLA Reach (gx={gamma_x:.2f}, gz={gamma_z:.2f}, K={k_steps})"
+    else:
+        policy_label = f"SmolVLA Reach (gx={gamma_x:.1f}, K={k_steps})"
     policy_color = (0, 255, 128) if max_lift_cm >= 5.0 else (0, 255, 0)
 
     for i in range(num_frames):
@@ -316,9 +345,35 @@ def generate_comparison_videos(
     writer_2way.release()
     print(f"[+] Saved 2-Way Video -> {vid_2way_path}")
 
+    # Generate 2-Way looping GIF (10 FPS)
+    gif_2way_path = out_dir / f"{prefix}_smolvla_calibrated_gx{gx_str}{gz_str}_k{k_steps}_side_by_side.gif"
+    try:
+        import imageio
+        gif_frames = []
+        for i in range(0, num_frames, 2):
+            left_bgr = real_frames[i].copy()
+            right_bgr = cv2.cvtColor(smol_frames[i], cv2.COLOR_RGB2BGR)
+
+            cv2.rectangle(left_bgr, (0, 0), (256, 32), (0, 0, 0), -1)
+            cv2.putText(left_bgr, "Real Human Demo", (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1)
+
+            cv2.rectangle(right_bgr, (0, 0), (256, 42), (0, 0, 0), -1)
+            cv2.putText(right_bgr, policy_label, (8, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.38, policy_color, 1)
+            z_curr = (glass_zs[i] - 0.8575) * 100.0
+            cv2.putText(right_bgr, f"Z: {z_curr:+.1f}cm | Step {i+1}/{num_frames}", (8, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
+
+            combo_bgr = np.hstack([left_bgr, right_bgr])
+            combo_rgb = cv2.cvtColor(combo_bgr, cv2.COLOR_BGR2RGB)
+            gif_frames.append(combo_rgb)
+
+        imageio.mimsave(str(gif_2way_path), gif_frames, fps=10, loop=0)
+        print(f"[+] Saved 2-Way Looping GIF -> {gif_2way_path}")
+    except Exception as e:
+        print(f"[-] Could not save GIF: {e}")
+
     # --- Video 2: 3-Way Tri-Panel Video (768x256) ---
     if expert_frames:
-        vid_3way_path = out_dir / f"{prefix}_smolvla_calibrated_gx{gx_str}_k{k_steps}_tri_panel_comparison.mp4"
+        vid_3way_path = out_dir / f"{prefix}_smolvla_calibrated_gx{gx_str}{gz_str}_k{k_steps}_tri_panel_comparison.mp4"
         writer_3way = cv2.VideoWriter(str(vid_3way_path), fourcc, 20.0, (768, 256))
 
         for i in range(num_frames):
@@ -342,14 +397,21 @@ def generate_comparison_videos(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Simulate SmolVLA with calibrated forward reach")
+    parser = argparse.ArgumentParser(description="Simulate SmolVLA with calibrated forward reach and vertical gain")
     parser.add_argument("--video_id", type=str, default="Vid_0", help="Video prefix (Vid_0, Vid_2)")
     parser.add_argument("--checkpoint", type=str, default="outputs/smolvla_glass_expert")
-    parser.add_argument("--gamma_x", type=float, default=1.60, help="Forward reach gain multiplier")
+    parser.add_argument("--gamma_x", type=float, default=1.80, help="Forward reach gain multiplier")
+    parser.add_argument("--gamma_z", type=float, default=1.25, help="Vertical descent & lift gain multiplier")
+    parser.add_argument("--z_descent_limit", type=float, default=0.855, help="Target minimum EEF Z height before throttling descent")
     parser.add_argument("--chunk_exec_steps", "-k", type=int, default=5, help="Action chunk execution size")
     parser.add_argument("--steps", type=int, default=160, help="Max rollout steps")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     parser.add_argument("--out_dir", type=str, default="data/smolvla_comparisons")
     args = parser.parse_args()
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     policy = load_smolvla_model(device, checkpoint_path=args.checkpoint)
@@ -365,6 +427,8 @@ def main():
     rollout_results = run_calibrated_rollout(
         policy=policy,
         gamma_x=args.gamma_x,
+        gamma_z=args.gamma_z,
+        z_descent_limit=args.z_descent_limit,
         task_prompt=DEFAULT_TASK_PROMPT,
         max_steps=args.steps,
         chunk_exec_steps=args.chunk_exec_steps,
@@ -375,7 +439,8 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     gx_str = f"{args.gamma_x:.2f}".replace(".", "p")
-    npz_out = out_dir / f"{vid_stem}_smolvla_calibrated_gx{gx_str}_k{args.chunk_exec_steps}_rollout_data.npz"
+    gz_str = f"_gz{args.gamma_z:.2f}".replace(".", "p") if abs(args.gamma_z - 1.0) > 1e-3 else ""
+    npz_out = out_dir / f"{vid_stem}_smolvla_calibrated_gx{gx_str}{gz_str}_k{args.chunk_exec_steps}_rollout_data.npz"
     np.savez_compressed(
         str(npz_out),
         sim_frames=rollout_results["sim_frames"],
@@ -384,15 +449,18 @@ def main():
         eef_positions=rollout_results["eef_positions"],
         metrics={
             "max_lift_cm": rollout_results["max_lift_cm"],
+            "final_lift_cm": rollout_results["final_lift_cm"],
             "success": rollout_results["success"],
             "min_d_xy_cm": rollout_results["min_d_xy_cm"],
             "max_reach_x_m": rollout_results["max_reach_x_m"],
             "lowest_eef_z_m": rollout_results["lowest_eef_z_m"],
+            "gamma_x": rollout_results["gamma_x"],
+            "gamma_z": rollout_results["gamma_z"],
         }
     )
     print(f"[+] Saved telemetry -> {npz_out}")
 
-    # Generate videos
+    # Generate videos and GIFs
     generate_comparison_videos(
         rollout_data=rollout_results,
         demo_video_path=annotated_demo,
