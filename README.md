@@ -7,29 +7,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 <p align="center">
-  <img src="media/Vid_0_side_by_side_loop.gif" width="650" alt="Demonstration Retargeting Vid_0" />
+  <img src="media/Vid_0_loop.gif" width="280" alt="Input Human Demonstration Vid_0" />
   <br>
-  <em>From human hand to simulated robot: Retargeting a 6-second egocentric smartphone video into Franka Panda manipulation in RoboSuite.</em>
+  <em><b>The Real-World Input</b>: A 6-second egocentric smartphone video of a person reaching out and picking up a steel glass from a table (Vid_0.mp4).</em>
 </p>
 
 ### 💡 What is this project in plain English?
 
 > **Can a robot learn how to reach, grasp, and lift an object simply by watching a quick video recorded on your phone?**
 >
-> In this project, we recorded ordinary smartphone videos from a chest perspective of a person reaching out and picking up a steel glass from a table. We then built a full pipeline that:
+> In this project, we recorded ordinary smartphone videos from a chest perspective of a person reaching out and picking up a steel glass from a table. We then built an end-to-end AI and robotics pipeline that:
 > 1. **Tracks the motion in 3D**: Tracks how the human hand and glass move in 3D without requiring any gloves, markers, or specialized motion capture sensors.
 > 2. **Teaches a simulated robot**: Translates that human motion into robot arm joint commands inside a high-fidelity physics simulator (`RoboSuite` / `MuJoCo`).
 > 3. **Trains an AI brain**: Fine-tunes **SmolVLA** (a 450M parameter Vision-Language-Action AI model) so the simulated robot learns to look at camera images and perform the task autonomously.
-
-<details>
-<summary>▶️ <b>Click here to view the original human demonstration video (Vid_0) looping</b></summary>
-<br>
-<p align="center">
-  <img src="media/Vid_0_loop.gif" width="300" alt="Original Egocentric Video Vid_0" />
-  <br>
-  <em>Raw egocentric chest-camera recording of tabletop grasp-and-lift (Vid_0.mp4).</em>
-</p>
-</details>
 
 ---
 
@@ -234,7 +224,9 @@ In `src/learning/eval_smolvla_prompt_ablation.py`, we benchmarked prompt sensiti
 
 ## 5. Part IV: The Milestone Evaluation Registry for Vid_0
 
-Below is the definitive chronological benchmark across every developmental phase evaluated on demonstration clip `Vid_0` (160 steps in `GlassLiftEnv`). All comparison videos were rendered offscreen using hardware-accelerated H.264 (`avc1`):
+Below is the definitive chronological benchmark across every developmental phase evaluated on demonstration clip `Vid_0` (160 steps in `GlassLiftEnv`). Each milestone includes a synchronized, looping side-by-side comparison GIF and direct links to full H.264 benchmark videos.
+
+### Summary Benchmark Table
 
 | Phase & Milestone | Horizon ($K$) | Forward Gain ($\gamma_x$) | Max Reach $X$ | Cylinder Distance | Lowest EEF $Z$ | Net Glass Lift | Outcome & Behavioral Observation | Direct Video Artifact Link |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- | :--- |
@@ -250,6 +242,71 @@ Below is the definitive chronological benchmark across every developmental phase
 | **Phase 5: Spatial Loss Reweighting** | $K=5$ | $\gamma_x=1.0$ | $-0.0646\text{ m}$ | $3.09\text{ cm}$ | $0.8906\text{ m}$ | $0.00\text{ cm}$ | Training $X$-loss drops by $97.2\%$, but early hover drift throttles closed-loop forward reach. | [3-Way Comparison Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4) |
 
 *(Note: On demonstration clip `Vid_2`, $\gamma_x = 1.35$ achieved a sustained tabletop lift of **$+2.74\text{ cm}$**, documented in [`Vid_2_smolvla_calibrated_gx1p35_k5_side_by_side.mp4`](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_2_smolvla_calibrated_gx1p35_k5_side_by_side.mp4))*
+
+---
+
+### 5.1 Phase 1: Zero-Shot Baseline Evaluation (`lerobot/smolvla_base`)
+
+<p align="center">
+  <img src="data/smolvla_comparisons/Vid_0_zero_shot_side_by_side.gif" width="560" alt="Phase 1: Zero-Shot Evaluation" />
+  <br>
+  <em><b>Phase 1 Zero-Shot</b>: Left: Real human demonstration | Right: Pretrained base SmolVLA. Uncalibrated weights drive arm toward ceiling (Z = 2.13m).</em>
+</p>
+
+- **Analysis**: We first evaluated the off-the-shelf `lerobot/smolvla_base` checkpoint zero-shot without fine-tuning. Because the base model was pretrained predominantly on bi-manual Aloha and SO-100 arms, the action head lacked calibration for the Franka Panda single-arm coordinate frame. The robot arm immediately rose upward away from the tabletop, reaching $Z = 2.13\text{ m}$.
+
+---
+
+### 5.2 Phase 2: First Action Expert Fine-Tuning & Under-Reach Shortfall
+
+<p align="center">
+  <img src="data/smolvla_comparisons/Vid_0_baseline_finetuned_side_by_side.gif" width="560" alt="Phase 2: Baseline Fine-Tuning" />
+  <br>
+  <em><b>Phase 2 Baseline Fine-Tuned</b>: Left: Real human demonstration | Right: Fine-tuned expert (30 epochs). Arm approaches and descends, but under-reaches by ~3.4cm and clamps empty air.</em>
+</p>
+
+- **Analysis**: Fine-tuning the 99.88M parameter Flow-Matching Action Expert Head for 30 epochs with standard equal loss weighting ($1/32$ per channel) taught the robot the general task structure: the arm reaches forward and descends toward the table. However, due to small-velocity regression-to-the-mean on $\Delta X$, the hand stalled at $X = -0.0692\text{ m}$—approximately $3.4\text{ cm}$ behind the cylinder center ($X = -0.0350\text{ m}$)—and closed its fingers around empty air.
+
+---
+
+### 5.3 Phase 3: Chunk Execution Horizon ($K$) Ablation Study
+
+<p align="center">
+  <img src="data/smolvla_comparisons/Vid_0_k_ablation_k1_vs_k5.gif" width="560" alt="Phase 3: Horizon K Ablation" />
+  <br>
+  <em><b>Phase 3 Horizon K Ablation</b>: Left: K=1 (re-planning every step causes flow-matching stochastic chatter, 8.7 FPS) | Right: K=5 (optimal sweet spot: smooth momentum + 4 Hz feedback, 37.3 FPS).</em>
+</p>
+
+- **Analysis**: We benchmarked the replanning horizon $K \in [1, 2, 5, 10]$:
+  - **$K = 1$**: Running flow-matching denoising (10 ODE steps) at every single simulation step creates high-frequency stochastic jitter/chatter that kills forward momentum.
+  - **$K = 5$ (Sweet Spot)**: Executing 5 steps ($0.25\text{s}$) per plan provides the optimal balance: the controller builds smooth physical momentum while receiving closed-loop visual feedback at 4 Hz.
+  - **$K = 10$**: Executing 10 steps ($0.5\text{s}$) open-loop accumulates drift across the longer window, degrading positioning precision.
+
+---
+
+### 5.4 Phase 4: Calibrated Forward Reach Gain ($\gamma_x$) — Achieving Physical Grasp & Lift
+
+<p align="center">
+  <img src="data/smolvla_comparisons/Vid_0_calibrated_reach_side_by_side.gif" width="560" alt="Phase 4: Calibrated Reach Gain" />
+  <br>
+  <em><b>Phase 4 Calibrated Reach Gain (γ_x = 1.35)</b>: Left: Real human demonstration | Right: Franka Panda with approach gain. Fingers align with cylinder and physically lift it off the tabletop (+0.70cm on Vid_0, +2.74cm on Vid_2).</em>
+</p>
+
+- **Analysis**: To overcome the $3\text{ cm}$ under-reach shortfall without altering model architecture, we introduced phase-aware forward velocity scaling ($\gamma_x = 1.35$) applied strictly when the gripper is open and moving forward behind the cylinder. This enabled the gripper to hit $X = -0.0405\text{ m}$ (exact match to demo, $2.2\text{ mm}$ cylinder distance), clamp the cylinder walls, and **physically lift the glass off the tabletop for 12 consecutive simulation steps** ($+0.70\text{ cm}$ on Vid_0, $+2.74\text{ cm}$ on Vid_2).
+
+---
+
+### 5.5 Phase 5: Spatial-Reach Loss Reweighted Fine-Tuning
+
+<p align="center">
+  <img src="data/smolvla_comparisons/Vid_0_spatial_weighted_comparison.gif" width="600" alt="Phase 5: Spatial-Weighted 3-Way Comparison" />
+  <br>
+  <em><b>Phase 5 Spatial-Weighted Fine-Tuning</b>: Left: Real human demo | Center: Baseline unweighted expert | Right: Spatial-weighted expert (Wx=5.0, Wz=4.0). Training X-loss drops 97.2%, but early hover drift causes closed-loop self-throttling.</em>
+</p>
+
+- **Analysis**: Rather than relying on inference-time velocity scaling, we fine-tuned the model natively by allocating **$66.6\%$ of the gradient capacity to spatial position** ($W_x = 5.0, W_z = 4.0$). While training $X$-loss dropped by $97.2\%$ ($0.267 \to 0.0076$), closed-loop rollout revealed the early hover-phase drift phenomenon, demonstrating the fundamental limit of uniform imitation learning on few demonstrations.
+
+---
 
 ---
 
