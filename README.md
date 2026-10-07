@@ -6,7 +6,30 @@
 [![LeRobot](https://img.shields.io/badge/HuggingFace-LeRobot%20SmolVLA-orange.svg)](https://github.com/huggingface/lerobot)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An end-to-end robot learning system that translates egocentric smartphone video of human tabletop manipulation into 7-DoF Operational Space Control (OSC) actions for a Franka Emika Panda robot in a custom MuJoCo simulation digital twin (`GlassLiftEnv`), fine-tuning and evaluating **SmolVLA** (a 450M parameter Vision-Language-Action model) locally on Apple Silicon.
+<p align="center">
+  <img src="media/Vid_0_side_by_side_loop.gif" width="650" alt="Demonstration Retargeting Vid_0" />
+  <br>
+  <em>From human hand to simulated robot: Retargeting a 6-second egocentric smartphone video into Franka Panda manipulation in RoboSuite.</em>
+</p>
+
+### 💡 What is this project in plain English?
+
+> **Can a robot learn how to reach, grasp, and lift an object simply by watching a quick video recorded on your phone?**
+>
+> In this project, we recorded ordinary smartphone videos from a chest perspective of a person reaching out and picking up a steel glass from a table. We then built a full pipeline that:
+> 1. **Tracks the motion in 3D**: Tracks how the human hand and glass move in 3D without requiring any gloves, markers, or specialized motion capture sensors.
+> 2. **Teaches a simulated robot**: Translates that human motion into robot arm joint commands inside a high-fidelity physics simulator (`RoboSuite` / `MuJoCo`).
+> 3. **Trains an AI brain**: Fine-tunes **SmolVLA** (a 450M parameter Vision-Language-Action AI model) so the simulated robot learns to look at camera images and perform the task autonomously.
+
+<details>
+<summary>▶️ <b>Click here to view the original human demonstration video (Vid_0) looping</b></summary>
+<br>
+<p align="center">
+  <img src="media/Vid_0_loop.gif" width="300" alt="Original Egocentric Video Vid_0" />
+  <br>
+  <em>Raw egocentric chest-camera recording of tabletop grasp-and-lift (Vid_0.mp4).</em>
+</p>
+</details>
 
 ---
 
