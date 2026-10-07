@@ -69,9 +69,9 @@ class CoTrackerTrajectoryExtractor:
         T = len(frames)
         H, W = self.target_size
 
-        # Tight glass ROI positioned strictly on the cylindrical metal body (avoiding table below):
-        # In 384x384: X in [160, 215], Y in [145, 220]
-        glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
+        # Tight glass ROI positioned strictly on the cylindrical metal body:
+        # In 384x384: X in [160, 215], Y in [180, 238] (eliminates floating points in empty air)
+        glass_roi = (int(W * 0.42), int(H * 0.47), int(W * 0.56), int(H * 0.62))
 
         t_entry = None
         hand_pts_init = None
@@ -80,10 +80,23 @@ class CoTrackerTrajectoryExtractor:
             import mediapipe as mp
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
+            import urllib.request
 
-            model_path = "models/hand_landmarker.task"
-            if os.path.exists(model_path):
-                base_options = python.BaseOptions(model_asset_path=model_path)
+            model_path = Path("models/hand_landmarker.task")
+            if not model_path.exists():
+                try:
+                    model_path.parent.mkdir(parents=True, exist_ok=True)
+                    print(f"[*] Downloading MediaPipe Hand Landmarker model to {model_path}...")
+                    urllib.request.urlretrieve(
+                        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+                        str(model_path),
+                    )
+                    print("[+] MediaPipe Hand Landmarker model downloaded successfully.")
+                except Exception as dl_err:
+                    print(f"[!] Could not auto-download MediaPipe model: {dl_err}")
+
+            if model_path.exists():
+                base_options = python.BaseOptions(model_asset_path=str(model_path))
                 options = vision.HandLandmarkerOptions(
                     base_options=base_options,
                     running_mode=vision.RunningMode.IMAGE,
@@ -114,9 +127,9 @@ class CoTrackerTrajectoryExtractor:
 
         if t_entry is None:
             t_entry = 30
-            # Fallback 21 points in hand approach region
-            hxs = np.linspace(W * 0.62, W * 0.76, 5)
-            hys = np.linspace(H * 0.70, H * 0.88, 5)
+            # Fallback 21 points tightly focused on the approaching hand region:
+            hxs = np.linspace(W * 0.65, W * 0.74, 5)
+            hys = np.linspace(H * 0.72, H * 0.82, 5)
             gx, gy = np.meshgrid(hxs, hys)
             hand_pts_init = np.stack([gx.reshape(-1)[:21], gy.reshape(-1)[:21]], axis=1).astype(np.float32)
 
