@@ -203,8 +203,8 @@ $$
   2. **Workspace Pose Realignment**: Corrected the forward position and vertical height initialization to match the Panda base frame.
   3. **Tightened Glass ROI**: We shrank the glass query box so that it samples points strictly on the cylindrical metallic body, excluding the table surface below:
      ```python
-     # Tight glass ROI positioned strictly on cylindrical metal body (avoiding table below and air above):
-     glass_roi = (int(W * 0.42), int(H * 0.47), int(W * 0.56), int(H * 0.62))
+     # Tight glass ROI positioned strictly on cylindrical metal body (avoiding table below):
+     glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
      ```
      This guaranteed that 100% of tracked points resided on the moving tumbler, preventing static table points from corrupting the centroid.
 - **Outcome & Next Barrier**: As shown in `Vid_0_ct_comparison copy 2.mp4`, the robot arm now moves forward and physically reaches the glass! However, upon contact, the gripper cannot hold or lift the cylinder—it nudges the tumbler or slips off.

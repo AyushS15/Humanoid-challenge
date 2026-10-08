@@ -69,9 +69,9 @@ class CoTrackerTrajectoryExtractor:
         T = len(frames)
         H, W = self.target_size
 
-        # Tight glass ROI positioned strictly on the cylindrical metal body:
-        # In 384x384: X in [160, 215], Y in [180, 238] (eliminates floating points in empty air)
-        glass_roi = (int(W * 0.42), int(H * 0.47), int(W * 0.56), int(H * 0.62))
+        # Tight glass ROI positioned strictly on cylindrical metal body (avoiding table below):
+        # In 384x384: X in [160, 215], Y in [145, 222]
+        glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
 
         t_entry = None
         hand_pts_init = None
