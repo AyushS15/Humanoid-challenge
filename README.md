@@ -18,8 +18,10 @@
 >
 > In this project, we recorded ordinary smartphone videos from a chest perspective of a person reaching out and picking up a steel glass from a table. We then built an end-to-end AI and robotics pipeline that:
 > 1. **Tracks the motion in 3D**: Tracks how the human hand and glass move in 3D without requiring any gloves, markers, or specialized motion capture sensors.
-> 2. **Teaches a simulated robot**: Translates that human motion into robot arm joint commands inside a high-fidelity physics simulator (`RoboSuite` / `MuJoCo`).
+> 2. **Teaches a simulated robot**: Translates that human motion into robot arm joint commands inside a high-fidelity physics simulator (`RoboSuite` / `MuJoCo`) on the industry-standard Franka Emika Panda arm.
 > 3. **Trains an AI brain**: Fine-tunes **SmolVLA** (a 450M parameter Vision-Language-Action AI model) so the simulated robot learns to look at camera images and perform the task autonomously.
+>
+> *Note on Scope: While titled "Humanoid Challenge", the manipulation benchmark focuses on the core transfer problem—retargeting unstructured human demonstrations to robot execution—evaluated on the 7-DoF Franka Emika Panda arm in RoboSuite.*
 
 ---
 
@@ -28,30 +30,30 @@
 2. [Part I: Real-to-Sim Computer Vision & Tracking Evolution](#2-part-i-real-to-sim-computer-vision--tracking-evolution)
    - [MediaPipe 21-DoF Tracking & Pinch Metric](#21-mediapipe-21-dof-tracking--pinch-metric)
    - [The Index Finger Occlusion Failure Mode](#22-the-index-finger-occlusion-failure-mode)
-   - [Failed Multi-Keypoint Heuristic Fallback](#23-failed-multi-keypoint-heuristic-fallback)
+   - [Index Finger Keypoint Fallback Limitations](#23-index-finger-keypoint-fallback-limitations)
    - [Transition to CoTracker3 Dense Point Tracking](#24-transition-to-cotracker3-dense-point-tracking)
-3. [Part II: Physical Digital Twin Engineering & The 5 CoTracker Breakthroughs](#3-part-ii-physical-digital-twin-engineering--the-5-cotracker-breakthroughs)
-   - [Breakthrough 1: Raw CoTracker3 Baseline (`copy`) — The Immobility Hurdle](#31-breakthrough-1-raw-cotracker3-baseline-copy--the-immobility-hurdle)
-   - [Breakthrough 2: 60° Camera Pitch & Tight Glass ROI (`copy 2`) — Restoring Forward Reach](#32-breakthrough-2-60-camera-pitch--tight-glass-roi-copy-2--restoring-forward-reach)
-   - [Breakthrough 3: Material Physics Calibration (`copy 3`) — Hollow Steel Density & Contact Friction](#33-breakthrough-3-material-physics-calibration-copy-3--hollow-steel-density--contact-friction)
-   - [Breakthrough 4: Gripper Squaring (45° → 0°) & Action Synchronization (`copy 4`) — First Successful Lift](#34-breakthrough-4-gripper-squaring-45--0--action-synchronization-copy-4--first-successful-lift)
-   - [Breakthrough 5: Generalized Co-Motion Latch (ρ_t > 0.55) (`final`) — Autonomous Pick & Place](#35-breakthrough-5-generalized-co-motion-latch-rho_t--055-final--autonomous-pick--place)
+3. [Part II: Physical Digital Twin Engineering: 5 Calibration Iterations](#3-part-ii-physical-digital-twin-engineering-5-calibration-iterations)
+   - [Iteration 1: Raw CoTracker3 Baseline (The Immobility Hurdle)](#31-iteration-1-raw-cotracker3-baseline-the-immobility-hurdle)
+   - [Iteration 2: 60° Camera Pitch & Tight Glass ROI (Restoring Forward Reach)](#32-iteration-2-60-camera-pitch--tight-glass-roi-restoring-forward-reach)
+   - [Iteration 3: Material Physics Calibration (Hollow Density & Contact Friction)](#33-iteration-3-material-physics-calibration-hollow-density--contact-friction)
+   - [Iteration 4: Gripper Squaring (0° Approach Angle) (First Physical Lift)](#34-iteration-4-gripper-squaring-0-approach-angle-first-physical-lift)
+   - [Iteration 5: Co-Motion Velocity Latch (Expert Demonstration Pick & Place)](#35-iteration-5-co-motion-velocity-latch-expert-demonstration-pick--place)
    - [Cylinder Resizing & Workspace Relocation](#36-cylinder-resizing--workspace-relocation)
 4. [Part III: SmolVLA Vision-Language-Action Policy Integration](#4-part-iii-smolvla-vision-language-action-policy-integration)
    - [Architecture: SigLIP-400M + Flow-Matching Action Expert](#41-architecture-siglip-400m--flow-matching-action-expert)
    - [LeRobot Dataset Packaging & Feature Probing](#42-lerobot-dataset-packaging--feature-probing)
    - [Language Conditioning & Prompt Sensitivity](#43-language-conditioning--prompt-sensitivity)
 5. [Part IV: The Milestone Evaluation Registry for Vid_0 (With Direct Video Links)](#5-part-iv-the-milestone-evaluation-registry-for-vid_0)
-6. [Part V: Scientific Introspection: Limits of Few-Shot Imitation Learning](#6-part-v-scientific-introspection-limits-of-few-shot-imitation-learning)
+6. [Part V: Failure Analysis: Limits of Few-Shot Imitation Learning](#6-part-v-failure-analysis-limits-of-few-shot-imitation-learning)
    - [Uniform Temporal Averaging vs Critical Contact Transitions](#61-uniform-temporal-averaging-vs-critical-contact-transitions)
    - [The Hover-Phase Drift Discovery (Steps 0–30)](#62-the-hover-phase-drift-discovery-steps-030)
    - [Closed-Loop Covariate Shift & Self-Throttling (Steps 45–80)](#63-closed-loop-covariate-shift--self-throttling-steps-4580)
    - [Signal-to-Noise Mismatch Across Action Channels](#64-signal-to-noise-mismatch-across-action-channels)
    - [Third-Person Optical Foreshortening & Parallax](#65-third-person-optical-foreshortening--parallax)
-7. [Part VI: Systems & Hardware Post-Mortem (Apple Silicon Unified Memory)](#7-part-vi-systems--hardware-post-mortem-apple-silicon-unified-memory)
+7. [Part VI: Systems Note: MuJoCo CGL Offscreen Rendering on macOS Metal](#7-part-vi-systems-note-mujoco-cgl-offscreen-rendering-on-macos-metal)
 8. [Part VII: Future Roadmap for Data-Constrained Robot Learning](#8-part-vii-future-roadmap-for-data-constrained-robot-learning)
-9. [Part VIII: Complete Repository & File Catalog](#8-part-viii-complete-repository--file-catalog)
-10. [Part IX: Quick-Start & Reproduction Guide](#9-part-ix-quick-start--reproduction-guide)
+9. [Part VIII: Complete Repository & File Catalog](#9-part-viii-complete-repository--file-catalog)
+10. [Part IX: Quick-Start & Reproduction Guide](#10-part-ix-quick-start--reproduction-guide)
 
 ---
 
@@ -146,42 +148,42 @@ Because sparse anatomical keypoints failed under physical occlusions, we complet
 
 ---
 
-## 3. Part II: Physical Digital Twin Engineering & The 5 CoTracker Breakthroughs
+## 3. Part II: Physical Digital Twin Engineering: 5 Calibration Iterations
 
-Retargeting dense computer vision tracks into a Franka Panda robot in `RoboSuite` / `MuJoCo` was not a plug-and-play process. We encountered severe kinematic freezes, tabletop point contaminations, physics slippages, and gripper alignment barriers. 
+Retargeting dense computer vision tracks into a Franka Panda robot in `RoboSuite` / `MuJoCo` was an iterative calibration process. We addressed kinematic limits, tabletop point noise, physical slip, and gripper orientation across 5 development steps.
 
-Below is the definitive chronological progression across the **5 developmental iterations** (archived in `data/old_videos/` and `data/cotracker_comparisons/`), detailing our hands-on observations, root-cause deductions, and physics calibrations:
+Below is the chronological progression across the **5 developmental iterations** (archived in `data/old_videos/` and `data/cotracker_comparisons/`), detailing our observations, deductions, and physics calibrations:
 
 ### Progression Summary Table
 
 | Iteration & Video Artifact | Key Physical Hurdle | Engineering Deduction & Fix | Simulation Outcome |
 | :--- | :--- | :--- | :--- |
-| **Iteration 1: Raw CoTracker3**<br>(`Vid_0_ct_comparison copy.mp4`) | Arm completely stationary; zero forward transit | Centroid computed without camera tilt; oversized ROI captured static table points; initial pose misaligned | Arm immobile in back (`[REPLAY]`) |
+| **Iteration 1: Raw CoTracker3**<br>(`Vid_0_ct_comparison copy.mp4`) | Arm stationary; zero forward reach | Centroid computed without camera tilt; oversized ROI captured static table points | Arm immobile in back (`[REPLAY]`) |
 | **Iteration 2: Pitch & ROI Fix**<br>(`Vid_0_ct_comparison copy 2.mp4`) | Arm reaches glass but cannot grip or lift | Camera tilt corrected 45° → 60°; workspace aligned; glass ROI tightened to cylinder | Arm reaches cylinder, but slips on contact |
 | **Iteration 3: Material & Friction**<br>(`Vid_0_ct_comparison copy 3.mp4`) | Object too heavy (>2.1 kg) and slick; slips off | Reduced density to hollow steel (450 kg/m³, ~120g); boosted friction μ = 2.0 | Firm contact, but gripper approaching at 45° |
 | **Iteration 4: Gripper Squaring**<br>(`Vid_0_ct_comparison copy 4.mp4`) | Diagonal 45° approach pushes glass away | Squared gripper from 45° → 0° horizontal; aligned frame-level actions | **First physical lift!** (`[LIFT SUCCESS]`) |
-| **Iteration 5: Co-Motion Latch**<br>(`Vid_0_ct_comparison.mp4`) | Frame-coded timing lacks multi-video generalization | Replaced frame heuristics with velocity co-motion correlation (ρ_t > 0.55) | **Autonomous Pick & Place!** (`+7.2cm [SUCCESS]`) |
+| **Iteration 5: Co-Motion Latch**<br>(`Vid_0_ct_comparison.mp4`) | Frame-coded timing lacks multi-video generalization | Replaced frame heuristics with velocity co-motion correlation (ρ_t > 0.55) | **Expert Pick & Place!** (`+7.2cm [SUCCESS]`) |
 
 ---
 
-### 3.1 Breakthrough 1: Raw CoTracker3 Baseline (`copy`) — The Immobility Hurdle
+### 3.1 Iteration 1: Raw CoTracker3 Baseline — The Immobility Hurdle
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter1_raw_cotracker.gif" width="560" alt="Iteration 1: Raw CoTracker3 Baseline" />
   <br>
-  <em><b>Iteration 1 (Raw CoTracker3)</b>: Left: CoTracker3 tracking | Right: Simulated Panda robot. Arm remains completely stationary at the back and fails to reach forward.</em>
+  <em><b>Iteration 1 (Raw CoTracker3)</b>: Left: CoTracker3 tracking | Right: Simulated Panda robot. Arm remains stationary at the back and fails to reach forward.</em>
 </p>
 
-- **Hands-On Problem Observed**:
-  In our first test with CoTracker3 without modifications (`Vid_0_ct_comparison copy.mp4`), the simulated Panda arm stayed completely frozen at the back of the workspace and never reached forward toward the glass cylinder.
+- **Problem Observed**:
+  In our first test with CoTracker3 without modifications (`Vid_0_ct_comparison copy.mp4`), the simulated Panda arm stayed frozen at the back of the workspace and never reached forward toward the glass cylinder.
 - **Root-Cause Deductions**:
-  1. **Centroid Distance without Camera Tilt**: We were computing the reaching distance simply by measuring the 2D Euclidean distance between the centroids of the glass and the human hand in pixel coordinates. Because the chest-mounted camera is pointed down at an oblique angle, raw 2D pixel distance does not represent horizontal travel along the tabletop.
-  2. **Initial Pose Misalignment**: The initial forward position ($X$) and vertical height ($Z$) of the robot end-effector were severely misaligned with the Franka Panda's operational workspace.
-  3. **Oversized ROI & Tabletop Point Contamination**: The initial Region of Interest (ROI) query box for the glass was drawn too large. As a result, points were sampled not only on the glass, but also on the static tabletop surface and table reflections. When the hand and glass moved, these stationary tabletop points remained static, dragging down the computed centroid $\mathbf{c}_{\text{glass}}(t) = \frac{1}{N} \sum_{i=1}^N \mathbf{p}_i(t)$ and making the glass appear virtually motionless.
+  1. **Centroid Distance without Camera Tilt**: We were computing reaching distance simply by measuring the 2D Euclidean distance between the centroids of the glass and hand in pixel coordinates. Because the chest-mounted camera is tilted down, raw 2D pixel distance does not represent horizontal travel along the tabletop.
+  2. **Initial Pose Misalignment**: The initial forward position ($X$) and vertical height ($Z$) of the robot end-effector were misaligned with the Franka Panda's operational workspace.
+  3. **Oversized ROI & Tabletop Point Contamination**: The initial Region of Interest (ROI) query box for the glass was drawn too large. As a result, points were sampled on the static tabletop surface and reflections. When the hand and glass moved, stationary table points dragged down the computed centroid $\mathbf{c}_{\text{glass}}(t)$, making the glass appear virtually motionless.
 
 ---
 
-### 3.2 Breakthrough 2: 60° Camera Pitch & Tight Glass ROI (`copy 2`) — Restoring Forward Reach
+### 3.2 Iteration 2: 60° Camera Pitch & Tight Glass ROI — Restoring Forward Reach
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter2_camera_roi_fix.gif" width="560" alt="Iteration 2: 60 Deg Camera Pitch and Tight ROI" />
@@ -189,8 +191,8 @@ Below is the definitive chronological progression across the **5 developmental i
   <em><b>Iteration 2 (Pitch & ROI Fix)</b>: Left: Tight ROI CoTracker3 | Right: Panda arm reaches forward and touches cylinder, but cannot pick it up.</em>
 </p>
 
-- **Hands-On Observations & Breakthroughs**:
-  1. **60° Camera Pitch Angle Correction**: We realized the real-world smartphone video was recorded from a chest mount tilted downward at approximately $60^\circ$, whereas our initial kinematic script assumed a $45^\circ$ angle. Correcting this angle in `src/retargeting/cotracker_to_panda.py` un-projected the camera-plane displacement into true horizontal tabletop transit:
+- **Observations & Implementation**:
+  1. **60° Camera Pitch Angle Correction**: The real-world smartphone video was recorded from a chest mount tilted downward at approximately $60^\circ$, whereas our initial script assumed a $45^\circ$ angle. Correcting this angle in `src/retargeting/cotracker_to_panda.py` un-projected camera-plane displacement into true horizontal tabletop transit:
 
 $$
 v_{\text{forward}} = \frac{v_{\text{reach}}}{\sin(60^\circ)}, \quad v_{\text{vertical}} = \frac{v_{\text{vertical}}}{\cos(60^\circ)}
@@ -206,12 +208,12 @@ $$
      # Tight glass ROI positioned strictly on cylindrical metal body (avoiding table below):
      glass_roi = (int(W * 0.42), int(H * 0.38), int(W * 0.56), int(H * 0.58))
      ```
-     This guaranteed that 100% of tracked points resided on the moving tumbler, preventing static table points from corrupting the centroid.
+     This guaranteed that tracked points resided on the moving tumbler, preventing static table points from corrupting the centroid.
 - **Outcome & Next Barrier**: As shown in `Vid_0_ct_comparison copy 2.mp4`, the robot arm now moves forward and physically reaches the glass! However, upon contact, the gripper cannot hold or lift the cylinder—it nudges the tumbler or slips off.
 
 ---
 
-### 3.3 Breakthrough 3: Material Physics Calibration (`copy 3`) — Hollow Steel Density & Contact Friction
+### 3.3 Iteration 3: Material Physics Calibration — Hollow Steel Density & Contact Friction
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter3_material_friction_fix.gif" width="560" alt="Iteration 3: Hollow Tumbler Density and Friction" />
@@ -219,8 +221,8 @@ $$
   <em><b>Iteration 3 (Material & Friction Fix)</b>: Parallel pads firmly engage the tumbler without slippage, but approach orientation is still tilted diagonally at 45°.</em>
 </p>
 
-- **Hands-On Observations & Breakthroughs**:
-  1. **Solid Cylinder Mass Overload**: Investigating why the robot could not lift the cylinder revealed that MuJoCo defaulted to a solid steel cylinder density ($7850\text{ kg/m}^3$). A solid cylinder of radius $3\text{ cm}$ and height $9.5\text{ cm}$ weighed over $2.1\text{ kg}$! This completely overloaded the Franka Panda gripper's maximum clamping torque and caused severe tipping moments.
+- **Observations & Implementation**:
+  1. **Solid Cylinder Mass Overload**: MuJoCo defaulted to a solid steel cylinder density ($7850\text{ kg/m}^3$). A solid cylinder of radius $3\text{ cm}$ and height $9.5\text{ cm}$ weighed over $2.1\text{ kg}$! This overloaded the Franka Panda gripper's maximum clamping torque and caused tipping moments.
   2. **Hollow Steel Tumbler Density ($450\text{ kg/m}^3$)**: We recalibrated the density in `src/simulation/glass_lift_env.py` to match a real-world, thin-walled hollow steel tumbler (~120g):
      ```python
      GLASS_DENSITY = 450.0  # kg/m^3 -> yields realistic hollow tumbler mass (~120g)
@@ -235,7 +237,7 @@ $$
 
 ---
 
-### 3.4 Breakthrough 4: Gripper Squaring (45° → 0°) & Action Synchronization (`copy 4`) — First Successful Lift
+### 3.4 Iteration 4: Gripper Squaring (45° → 0°) & Action Synchronization — First Successful Lift
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter4_gripper_squaring_lift.gif" width="560" alt="Iteration 4: Gripper Squaring and First Successful Lift" />
@@ -243,8 +245,8 @@ $$
   <em><b>Iteration 4 (Gripper Squaring to 0°)</b>: Franka Panda wrist is squared flat against the cylinder sides, achieving <b>Sim: GlassLift [LIFT SUCCESS]</b>!</em>
 </p>
 
-- **Hands-On Observations & Breakthroughs**:
-  1. **45° Diagonal Approach Realization**: We discovered another major physical flaw: RoboSuite's Franka Panda initializes joint 7 at $q_7 = \pi/4$ ($45^\circ$). This meant the gripper approached the cylinder at a diagonal tilt, causing one finger pad to hit the rim early and bump the glass away instead of wrapping around it.
+- **Observations & Implementation**:
+  1. **45° Diagonal Approach Realization**: RoboSuite's Franka Panda initializes joint 7 at $q_7 = \pi/4$ ($45^\circ$). This meant the gripper approached the cylinder at a diagonal tilt, causing one finger pad to hit the rim early and bump the glass away instead of wrapping around it.
   2. **Wrist Squaring to 0° (Horizontal)**: In `src/simulation/glass_lift_env.py`, we overrode the joint configuration by rotating the wrist $-45^\circ$:
      ```python
      # Square the gripper horizontally (0° approach angle):
@@ -252,24 +254,24 @@ $$
      self.robots[0].init_qpos = square_qpos
      ```
      This aligned the parallel jaws perpendicular to the approach direction ($X$), matching human grasp geometry.
-  3. **Frame-Level Action Alignment**: We aligned the trajectory actions frame-by-frame with the actions occurring in the video:
+  3. **Frame-Level Action Alignment**: We aligned the trajectory actions frame-by-frame with the demonstration timing:
      - Frames 0–45: Pre-grasp hover and forward descent toward table height.
      - Frames 46–70: Horizontal approach aligning pads with the cylinder center.
      - Frames 71–95: Closed clamp around the cylinder walls.
      - Frames 96–160: Upward vertical lift off the table.
-- **Outcome**: **Sim: GlassLift [LIFT SUCCESS]**! As recorded in `Vid_0_ct_comparison copy 4.mp4`, the robot securely clamped the cylinder and lifted it cleanly into the air for the very first time!
+- **Outcome**: **Sim: GlassLift [LIFT SUCCESS]**! As recorded in `Vid_0_ct_comparison copy 4.mp4`, the robot securely clamped the cylinder and lifted it cleanly into the air for the very first time.
 
 ---
 
-### 3.5 Breakthrough 5: Generalized Co-Motion Latch (ρ_t > 0.55) (final) — Autonomous Pick & Place
+### 3.5 Iteration 5: Co-Motion Velocity Latch (ρ_t > 0.55) — Expert Demonstration Pick & Place
 
 <p align="center">
   <img src="data/old_videos/Vid_0_ct_iter5_final_pick_place.gif" width="560" alt="Iteration 5: Final Autonomous Pick and Place" />
   <br>
-  <em><b>Iteration 5 (Final Co-Motion Latch)</b>: Point velocity co-motion correlation unlocks autonomous, generalizable <b>PICK & PLACE: 7.2cm [SUCCESS]</b> across videos.</em>
+  <em><b>Iteration 5 (Final Co-Motion Latch)</b>: Point velocity co-motion correlation unlocks automated expert demonstration retargeting: <b>PICK & PLACE: 7.2cm [SUCCESS]</b> across clips.</em>
 </p>
 
-- **From Frame Heuristics to General Physics Metric**:
+- **From Frame Heuristics to Velocity Alignment**:
   While hardcoding actions to frame intervals proved the physical mechanics in Iteration 4, it could not generalize across multiple videos where human demonstrators moved at different speeds.
 - **Velocity Co-Motion Correlation ($\rho_t$)**:
   In `src/video_processing/cotracker_tracker.py`, we replaced frame heuristics with point velocity alignment:
@@ -281,7 +283,7 @@ $$
   - **Pre-grasp phase**: Hand moves ($\bar{\mathbf{v}}_{\text{hand}} \ne \mathbf{0}$), glass stationary ($\bar{\mathbf{v}}_{\text{glass}} = \mathbf{0}$) $\implies \rho_t \approx 0$.
   - **Grasp & Lift phase**: Clamped tumbler moves synchronously with the hand $\implies \rho_t \to +1.0$.
   - A hysteresis latch triggers gripper closure when $\rho_t > 0.55$ within proximity $d < 0.25$.
-- **Outcome**: **PICK & PLACE: 7.2cm [SUCCESS]**! As shown in `data/cotracker_comparisons/Vid_0_ct_comparison.mp4`, the system achieved robust, fully autonomous closed-loop pick-and-place with $+7.2\text{ cm}$ sustained lift off the tabletop, creating the ground-truth demonstration dataset used to train SmolVLA.
+- **Demonstration Retargeting Outcome**: **PICK & PLACE: 7.2cm [SUCCESS]**! As shown in `data/cotracker_comparisons/Vid_0_ct_comparison.mp4`, the system achieved clean, fully automated demonstration retargeting with $+7.2\text{ cm}$ sustained lift off the tabletop, creating the ground-truth demonstration dataset used to train the SmolVLA policy. (See Part IV below for closed-loop neural policy rollout results).
 
 ---
 
@@ -328,13 +330,13 @@ Using `src/learning/probe_encoder_features.py`, we verified visual alignment:
 ### 4.3 Language Conditioning & Prompt Sensitivity
 In `src/learning/eval_smolvla_prompt_ablation.py`, we benchmarked prompt sensitivity:
 - Default prompt: `"approach the glass on the table and grasp the cylinder and lift the cylinder and then bring down the cylinder to the table and then withdraw your hands"`
-- Flow-matching generation variance under paraphrased instructions was < 4.2%, confirming robust multimodal grounding.
+- Action trajectory variance under paraphrased instructions was < 4.2%, indicating that in this few-shot setting the policy primarily relies on visual features rather than being brittle to minor wording changes.
 
 ---
 
 ## 5. Part IV: The Milestone Evaluation Registry for Vid_0
 
-Below is the definitive chronological benchmark across every developmental phase evaluated on demonstration clip `Vid_0` (160 steps in `GlassLiftEnv`). Each milestone includes a synchronized, looping side-by-side comparison GIF and direct links to full H.264 benchmark videos.
+Below is the chronological benchmark across every developmental phase evaluated on demonstration clip `Vid_0` (160 steps in `GlassLiftEnv`). Each milestone includes a synchronized, looping side-by-side comparison GIF and direct links to full H.264 benchmark videos.
 
 ### Summary Benchmark Table
 
@@ -349,7 +351,7 @@ Below is the definitive chronological benchmark across every developmental phase
 | <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25.gif" width="140" alt="Phase 4 gx=1.25" /></a> | **Phase 4: Calibrated Reach (γ_x=1.25)** | K = 5 | γ_x = 1.25 | -0.0332 m | 3.39 cm | 0.9065 m | 0.00 cm | Reaches cylinder X, but descent stalls at $Z=0.9065\text{ m}$; clamps top rim. | [$\gamma_x=1.25$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p25_k5_side_by_side.mp4) |
 | <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_calibrated_reach_side_by_side.gif" width="140" alt="Phase 4 gx=1.35" /></a> | **Phase 4: Calibrated Reach (γ_x=1.35)** | **K = 5** | **γ_x = 1.35** | **-0.0405 m** | **2.2 mm** | **0.8601 m** | **+0.70 cm** | **Exact match to demo; pads align with cylinder and physically lift it for 12 steps.** | [$\gamma_x=1.35$ Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_side_by_side.mp4)<br>[$\gamma_x=1.35$ Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p35_k5_tri_panel_comparison.mp4) |
 | <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60.gif" width="140" alt="Phase 4 gx=1.60" /></a> | **Phase 4: Calibrated Reach (γ_x=1.60)** | K = 5 | γ_x = 1.60 | -0.0301 m | 5.1 mm | 0.8590 m | +0.42 cm | Higher forward momentum; slight table vibration before lift. | [$\gamma_x=1.60$ Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p60_k5_side_by_side.mp4) |
-| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25.gif" width="140" alt="Phase 4 Dual-Axis gx=1.80 gz=1.25" /></a> | **Phase 4: Dual-Axis Grasp & Lift (γ_x=1.80, γ_z=1.25)** | **K = 5** | **γ_x = 1.80, γ_z = 1.25** | **-0.0419 m** | **1.18 cm** | **0.8869 m** | **+3.84 cm** | **Dual-axis breakthrough: forward reach + accelerated descent brings fingers past rim to tumbler body, achieving +3.84 cm sustained lift.** | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_tri_panel_comparison.mp4) |
+| <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4"><img src="data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25.gif" width="140" alt="Phase 4 Dual-Axis gx=1.80 gz=1.25" /></a> | **Phase 4: Dual-Axis Grasp & Lift (γ_x=1.80, γ_z=1.25)** | **K = 5** | **γ_x = 1.80, γ_z = 1.25** | **-0.0419 m** | **1.18 cm** | **0.8869 m** | **+3.84 cm** | **Dual-axis calibration: forward reach + accelerated descent brings fingers past rim to tumbler body, achieving +3.84 cm sustained lift.** | [Side-by-Side Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_side_by_side.mp4)<br>[3-Way Tri-Panel Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_smolvla_calibrated_gx1p80_gz1p25_k5_tri_panel_comparison.mp4) |
 | <a href="https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4"><img src="data/smolvla_comparisons/Vid_0_spatial_weighted_comparison.gif" width="140" alt="Phase 5 Reweighted" /></a> | **Phase 5: Spatial Loss Reweighting** | K = 5 | γ_x = 1.0 | -0.0646 m | 3.09 cm | 0.8906 m | 0.00 cm | Training X-loss drops by 97.2%, but early hover drift throttles closed-loop forward reach. | [3-Way Comparison Video](https://github.com/AyushS15/Humanoid-challenge/blob/main/data/smolvla_comparisons/Vid_0_weighted_vs_baseline_comparison.mp4) |
 
 *(Note: On demonstration clip `Vid_2`, $\gamma_x = 1.35$ achieved a sustained tabletop lift of **+2.74 cm**:)*
@@ -418,9 +420,9 @@ Below is the definitive chronological benchmark across every developmental phase
 - **The Limitation of Single-Axis Scaling ($\gamma_x$ only)**: While scaling forward velocity ($\gamma_x = 1.35$) successfully bridged the $3\text{ cm}$ horizontal under-reach shortfall, vertical descent stalled at $Z = 0.9065\text{ m}$. Because the $9.5\text{ cm}$ tall tumbler has its center of mass at $Z = 0.8575\text{ m}$ (with top rim at $Z = 0.9050\text{ m}$), closing fingers at $Z = 0.9065\text{ m}$ caused the rubber pads to clamp only the very top rim of the cylinder. With minimal contact surface area, the tumbler was prone to slipping out during upward acceleration, yielding only +0.70 cm of lift.
 - **The Dual-Axis Solution ($\gamma_x = 1.80, \gamma_z = 1.25$)**:
   1. **Accelerated Descent Phase ($a_{\text{grip}} < 0.2, \Delta Z < 0.0$)**: While approaching with an open gripper, downward velocity is scaled by $\gamma_z = 1.25$ until the end-effector reaches $Z \le 0.855\text{ m}$. This drives the gripper fingers past the rim directly into the cylindrical sweet spot centered around the tumbler's center of mass.
-  2. **High-Authority Forward Reach ($a_{\text{grip}} < 0.2, \Delta X > 0.0$)**: Scaling by $\gamma_x = 1.80$ eliminates transit lag, driving the gripper to $X = -0.0419\text{ m}$ ($1.18\text{ cm}$ cylinder offset) precisely as the grasp reflex activates.
+  2. **Forward Reach Velocity Gain ($a_{\text{grip}} < 0.2, \Delta X > 0.0$)**: Scaling by $\gamma_x = 1.80$ compensates for transit lag, driving the gripper to $X = -0.0419\text{ m}$ ($1.18\text{ cm}$ cylinder offset) precisely as the grasp reflex activates.
   3. **Amplified Vertical Lift Phase ($a_{\text{grip}} \ge 0.0, \Delta Z > 0.0$)**: Once the gripper clamps the cylinder walls, vertical gain ($\gamma_z = 1.25$) amplifies upward lift velocity against gravity.
-- **Empirical Breakthrough**: Across 160 rollout steps, the Franka Panda cleanly lifts the tumbler **+3.84 cm** off the table (+1.91 cm final height), firmly maintains the grasp throughout the trajectory, and lowers it back toward the tabletop—fulfilling the entire multi-phase demonstration cycle with high physical stability.
+- **Closed-Loop Grasp & Lift Outcome**: Across 160 rollout steps, the Franka Panda cleanly lifts the tumbler **+3.84 cm** off the table (+1.91 cm final height), maintains the grasp throughout the trajectory, and lowers it back toward the tabletop—completing the multi-phase task cycle.
 
 ---
 
@@ -436,7 +438,7 @@ Below is the definitive chronological benchmark across every developmental phase
 
 ---
 
-## 6. Part V: Scientific Introspection: Limits of Few-Shot Imitation Learning
+## 6. Part V: Failure Analysis: Limits of Few-Shot Imitation Learning
 
 Why did reweighting the training loss with $W_x = 5.0$ (37.0% gradient allocation) and $W_z = 4.0$ (29.6% gradient allocation) drastically reduce training loss by 97.2% ($0.267 \to 0.0076$), yet in closed-loop rollout only yield a minor +4.6 mm forward gain, leaving the arm ~2.9 cm short of the cylinder?
 
@@ -502,7 +504,7 @@ In third-person `agentview`, the camera looks along a diagonal axis. Forward mot
 
 ---
 
-## 7. Part VI: Systems & Hardware Post-Mortem (Apple Silicon Unified Memory)
+## 7. Part VI: Systems Note: MuJoCo CGL Offscreen Rendering on macOS Metal
 
 ### The Metal / MuJoCo CGL Offscreen Buffer Purge Bug
 During initial rollout evaluations on macOS, visual comparisons exhibited severe artifacting: offscreen simulation frames rendered completely black, glitchy rainbow static, or blurry textures.
@@ -537,7 +539,7 @@ $$
 
 ---
 
-## 8. Part VIII: Complete Repository & File Catalog
+## 9. Part VIII: Complete Repository & File Catalog
 
 ```
 humanoid-challenge/
@@ -578,7 +580,7 @@ humanoid-challenge/
 
 ---
 
-## 9. Part IX: Quick-Start & Reproduction Guide
+## 10. Part IX: Quick-Start & Reproduction Guide
 
 ### Prerequisites
 - **Python Version**: Python 3.10 or 3.11 (Note: macOS system `python3` defaults to 3.9; Python 3.10+ is strictly required by `lerobot>=0.3.0` and PyTorch MPS).
